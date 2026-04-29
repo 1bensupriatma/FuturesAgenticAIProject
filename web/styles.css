@@ -1,0 +1,378 @@
+:root {
+  --bg: #07131b;
+  --bg-elevated: #102230;
+  --panel: rgba(10, 29, 41, 0.86);
+  --panel-border: rgba(128, 187, 221, 0.18);
+  --ink: #e8f1f4;
+  --muted: #95a9b4;
+  --accent: #66d9b8;
+  --accent-strong: #24b58e;
+  --warn: #f4bf75;
+  --danger: #ff7a7a;
+  --shadow: 0 24px 72px rgba(0, 0, 0, 0.32);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: "IBM Plex Sans", "Avenir Next", "Segoe UI", sans-serif;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(36, 181, 142, 0.16), transparent 30%),
+    radial-gradient(circle at top right, rgba(90, 122, 255, 0.16), transparent 34%),
+    linear-gradient(180deg, #08131b 0%, #061017 48%, #040b10 100%);
+}
+
+.app-shell {
+  width: min(1400px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 24px 0 32px;
+}
+
+.hero-band,
+.workspace-grid {
+  width: 100%;
+}
+
+.hero-band {
+  display: grid;
+  grid-template-columns: 1.7fr 1fr;
+  gap: 18px;
+  padding: 18px 0 22px;
+}
+
+.hero-copy {
+  padding: 22px 22px 10px 4px;
+}
+
+.eyebrow,
+.section-kicker {
+  margin: 0 0 10px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.hero-copy h1,
+.panel-header h2,
+.chart-header h3,
+.detail-panel h3 {
+  letter-spacing: 0;
+}
+
+.hero-copy h1 {
+  margin: 0;
+  max-width: 14ch;
+  font-size: clamp(2.4rem, 5vw, 4.4rem);
+  line-height: 0.96;
+}
+
+.hero-text {
+  max-width: 66ch;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.hero-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-content: end;
+}
+
+.metric-tile,
+.signal-card,
+.trade-card,
+.detail-panel,
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow);
+}
+
+.metric-tile {
+  min-height: 124px;
+  padding: 18px;
+  border-radius: 8px;
+}
+
+.metric-label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin-bottom: 18px;
+}
+
+.metric-tile strong {
+  display: block;
+  font-size: 1.2rem;
+  line-height: 1.25;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.85fr);
+  gap: 18px;
+}
+
+.panel {
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.panel-header,
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+}
+
+.panel-header h2,
+.chart-header h3,
+.detail-panel h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.icon-button,
+.primary-button {
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.icon-button {
+  width: 40px;
+  height: 40px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.primary-button {
+  min-height: 44px;
+  padding: 0 18px;
+  font-weight: 600;
+  color: #06231d;
+  background: linear-gradient(135deg, var(--accent) 0%, #9be8d4 100%);
+}
+
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.control,
+.toggle-control {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.control span,
+.toggle-control span,
+.status-line,
+.chat-message time,
+.chart-header span {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.control input,
+.chat-composer textarea {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+  font: inherit;
+}
+
+.control input {
+  height: 44px;
+  padding: 0 12px;
+}
+
+.toggle-control {
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  align-self: end;
+  min-height: 44px;
+}
+
+.status-line {
+  min-height: 20px;
+  margin-top: 12px;
+}
+
+.status-line.error {
+  color: var(--danger);
+}
+
+.status-line.success {
+  color: var(--accent);
+}
+
+.signal-strip,
+.trade-grid,
+.details-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.signal-strip {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.trade-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.signal-card,
+.trade-card,
+.detail-panel {
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.signal-label,
+.trade-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-bottom: 10px;
+}
+
+.signal-card strong,
+.trade-card strong {
+  display: block;
+  font-size: 1rem;
+  word-break: break-word;
+}
+
+.chart-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#priceChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 12px;
+}
+
+.details-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.detail-panel pre {
+  margin: 14px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: #c7d7df;
+}
+
+.chat-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(320px, 1fr) auto;
+  min-height: 760px;
+}
+
+.chat-transcript {
+  overflow: auto;
+  margin-top: 14px;
+  padding-right: 4px;
+}
+
+.chat-message {
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.chat-message.assistant {
+  border-left: 3px solid var(--accent);
+}
+
+.chat-message.user {
+  border-left: 3px solid #7eaef5;
+}
+
+.chat-message p {
+  margin: 6px 0 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.chat-composer {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.chat-composer textarea {
+  min-height: 120px;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+@media (max-width: 1080px) {
+  .hero-band,
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .controls-grid,
+  .signal-strip,
+  .trade-grid,
+  .details-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    width: min(100vw - 20px, 100%);
+    padding-top: 14px;
+  }
+
+  .hero-copy {
+    padding-left: 0;
+  }
+
+  .hero-copy h1 {
+    max-width: none;
+    font-size: 2.3rem;
+  }
+
+  .hero-stat-grid,
+  .controls-grid,
+  .signal-strip,
+  .trade-grid,
+  .details-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .chat-panel {
+    min-height: 620px;
+  }
+}

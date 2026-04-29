@@ -4,6 +4,10 @@ from pathlib import Path
 import pandas as pd
 
 
+DEFAULT_SERIES_SYMBOL = "FUTURES"
+DEFAULT_SERIES_CONTRACT = "FUTURES_CONTINUOUS"
+
+
 class FuturesDataError(Exception):
     """Raised when futures data cannot be loaded or queried safely."""
 
@@ -32,7 +36,7 @@ class FuturesDataRepository:
 
     @classmethod
     def from_default_path(cls, csv_path=None):
-        path = csv_path or Path("data/sample_futures_data.csv")
+        path = csv_path or Path(__file__).resolve().parents[1] / "data" / "sample_futures_data.csv"
         return cls(path)
 
     def _load_csv(self, csv_path):
@@ -64,8 +68,6 @@ class FuturesDataRepository:
 
         if "date" not in resolved:
             raise FuturesDataError("CSV must include a date-like column.")
-        if "symbol" not in resolved and "contract" not in resolved:
-            raise FuturesDataError("CSV must include either a symbol-like or contract-like column.")
 
         return resolved
 
@@ -74,10 +76,12 @@ class FuturesDataRepository:
         rename_map = {source: target for target, source in columns.items()}
         normalized = normalized.rename(columns=rename_map)
 
-        if "symbol" not in normalized.columns and "contract" in normalized.columns:
+        if "symbol" not in normalized.columns and "contract" not in normalized.columns:
+            normalized["symbol"] = DEFAULT_SERIES_SYMBOL
+            normalized["contract"] = DEFAULT_SERIES_CONTRACT
+        elif "symbol" not in normalized.columns and "contract" in normalized.columns:
             normalized["symbol"] = normalized["contract"]
-
-        if "contract" not in normalized.columns:
+        elif "contract" not in normalized.columns:
             normalized["contract"] = normalized["symbol"]
 
         normalized["date"] = pd.to_datetime(normalized["date"], errors="coerce")
@@ -103,6 +107,23 @@ class FuturesDataRepository:
             return value.date().isoformat() if hasattr(value, "date") else value.isoformat()
         return str(value)
 
+    @staticmethod
+    def _coerce_datetime(value, boundary=None):
+        if value is None:
+            return None
+
+        raw_value = str(value).strip()
+        timestamp = pd.to_datetime(raw_value, errors="coerce")
+        if pd.isna(timestamp):
+            return timestamp
+
+        if len(raw_value) == 10 and raw_value.count("-") == 2:
+            if boundary == "end":
+                return timestamp + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+            return timestamp
+
+        return timestamp
+
     def _filter(self, symbol=None, contract=None, start_date=None, end_date=None):
         df = self.dataframe
 
@@ -111,10 +132,10 @@ class FuturesDataRepository:
         if contract:
             df = df[df["contract"].str.lower() == str(contract).strip().lower()]
         if start_date:
-            start_ts = pd.to_datetime(start_date, errors="coerce")
+            start_ts = self._coerce_datetime(start_date, boundary="start")
             df = df[df["date"] >= start_ts]
         if end_date:
-            end_ts = pd.to_datetime(end_date, errors="coerce")
+            end_ts = self._coerce_datetime(end_date, boundary="end")
             df = df[df["date"] <= end_ts]
 
         return df.copy()
@@ -143,8 +164,13 @@ class FuturesDataRepository:
             return {"error": "No matching rows found for the requested symbol/contract."}
 
         if date:
-            target_date = pd.to_datetime(date, errors="coerce")
-            same_day = df[df["date"] == target_date]
+            target_date = self._coerce_datetime(date, boundary="start")
+            if pd.isna(target_date):
+                same_day = df.iloc[0:0]
+            elif len(str(date).strip()) == 10:
+                same_day = df[df["date"].dt.normalize() == target_date.normalize()]
+            else:
+                same_day = df[df["date"] == target_date]
             row = same_day.iloc[-1] if not same_day.empty else None
         else:
             row = None
@@ -210,8 +236,13 @@ class FuturesDataRepository:
             return {"error": "Expiry column is required for term-structure analysis."}
 
         if date:
-            target_date = pd.to_datetime(date, errors="coerce")
-            df = df[df["date"] == target_date]
+            target_date = self._coerce_datetime(date, boundary="start")
+            if pd.isna(target_date):
+                df = df.iloc[0:0]
+            elif len(str(date).strip()) == 10:
+                df = df[df["date"].dt.normalize() == target_date.normalize()]
+            else:
+                df = df[df["date"] == target_date]
         else:
             latest_date = df["date"].max()
             df = df[df["date"] == latest_date]
