@@ -1,12 +1,32 @@
 const state = {
   marketData: null,
   chatAvailable: false,
+  stream: null,
+  streamAvailable: false,
+  agentExpanded: false,
 };
 
 const money = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+
+function formatProviderLabel(provider) {
+  const normalized = String(provider || "").trim().toLowerCase();
+  if (normalized === "yfinance" || normalized === "yahoo" || normalized === "yahoo_finance") {
+    return "Yahoo Finance";
+  }
+  if (normalized === "databento") {
+    return "Databento";
+  }
+  if (normalized === "tradovate") {
+    return "Tradovate";
+  }
+  if (normalized === "csv_file" || normalized === "csv_replay") {
+    return "CSV replay";
+  }
+  return provider || "local backend";
+}
 
 function setText(id, value) {
   const node = document.getElementById(id);
@@ -41,75 +61,20 @@ function addChatMessage(role, text) {
   container.scrollTop = container.scrollHeight;
 }
 
-function renderChart(rows) {
-  const svg = document.getElementById("priceChart");
-  svg.innerHTML = "";
+function setAgentExpanded(expanded) {
+  const widget = document.getElementById("agentWidget");
+  const toggle = document.getElementById("agentToggle");
+  const prompt = document.getElementById("chatPrompt");
+  if (!widget || !toggle) return;
 
-  if (!rows || !rows.length) {
-    return;
+  state.agentExpanded = expanded;
+  widget.classList.toggle("is-collapsed", !expanded);
+  toggle.setAttribute("aria-expanded", String(expanded));
+  toggle.setAttribute("aria-label", expanded ? "Collapse chat agent" : "Open chat agent");
+
+  if (expanded && prompt) {
+    requestAnimationFrame(() => prompt.focus());
   }
-
-  const width = 720;
-  const height = 280;
-  const padding = 28;
-  const closes = rows.map((row) => row.close);
-  const volumes = rows.map((row) => row.volume);
-  const minPrice = Math.min(...closes);
-  const maxPrice = Math.max(...closes);
-  const maxVolume = Math.max(...volumes);
-  const priceRange = maxPrice - minPrice || 1;
-
-  const linePoints = rows
-    .map((row, index) => {
-      const x = padding + (index / (rows.length - 1 || 1)) * (width - padding * 2);
-      const y = height - padding - ((row.close - minPrice) / priceRange) * (height - padding * 2);
-      return `${x},${y}`;
-    })
-    .join(" ");
-
-  const volumeWidth = (width - padding * 2) / rows.length;
-  rows.forEach((row, index) => {
-    const x = padding + index * volumeWidth;
-    const barHeight = maxVolume ? (row.volume / maxVolume) * 52 : 0;
-    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-    rect.setAttribute("x", String(x));
-    rect.setAttribute("y", String(height - padding - barHeight));
-    rect.setAttribute("width", String(Math.max(2, volumeWidth - 2)));
-    rect.setAttribute("height", String(barHeight));
-    rect.setAttribute("fill", "rgba(102, 217, 184, 0.18)");
-    svg.append(rect);
-  });
-
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-  path.setAttribute("points", linePoints);
-  path.setAttribute("fill", "none");
-  path.setAttribute("stroke", "#66d9b8");
-  path.setAttribute("stroke-width", "3");
-  path.setAttribute("stroke-linejoin", "round");
-  path.setAttribute("stroke-linecap", "round");
-
-  const baseline = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  baseline.setAttribute("x1", String(padding));
-  baseline.setAttribute("x2", String(width - padding));
-  baseline.setAttribute("y1", String(height - padding));
-  baseline.setAttribute("y2", String(height - padding));
-  baseline.setAttribute("stroke", "rgba(255,255,255,0.18)");
-
-  const topLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  topLabel.setAttribute("x", String(padding));
-  topLabel.setAttribute("y", "18");
-  topLabel.setAttribute("fill", "#95a9b4");
-  topLabel.setAttribute("font-size", "12");
-  topLabel.textContent = `High ${money.format(maxPrice)}`;
-
-  const bottomLabel = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  bottomLabel.setAttribute("x", String(padding));
-  bottomLabel.setAttribute("y", String(height - 8));
-  bottomLabel.setAttribute("fill", "#95a9b4");
-  bottomLabel.setAttribute("font-size", "12");
-  bottomLabel.textContent = `Low ${money.format(minPrice)}`;
-
-  svg.append(baseline, path, topLabel, bottomLabel);
 }
 
 async function loadHealth() {
@@ -117,9 +82,29 @@ async function loadHealth() {
   const payload = await response.json();
   state.chatAvailable = payload.agent_available;
   setText("chatAvailability", payload.agent_available ? "Available" : "Unavailable");
+  const metadata = payload.display_metadata || {};
+  const symbol = metadata.symbol || "NQ=F";
+  const timeframeLabel = metadata.timeframe || "5 minutes";
+  const chartType = metadata.chart_type || "Candles";
+  const currency = metadata.currency || "USD";
+  const tickSize = metadata.tick_size || "0.25";
+  const pointValue = metadata.point_value || "20";
+  const providerLabel = formatProviderLabel(payload.live_data_provider || payload.data_source);
+  state.streamAvailable = Boolean(payload.live_data_provider);
+  setText("instrumentTitle", `${symbol} local chart, local strategy backend.`);
+  setText("instrumentSubtitle", `The chart and analysis below use the same backend feed. Provider ${providerLabel} · ${timeframeLabel} · ${chartType.toLowerCase()} · ${currency} · tick ${tickSize} · point value ${pointValue}`);
+  setText("chartTitle", symbol);
+  setText("chartHint", `${timeframeLabel} · ${chartType} · ${providerLabel}`);
   if (!payload.agent_available && payload.agent_error) {
     setStatus("chatStatus", `Chat unavailable: ${payload.agent_error}`, "error");
   }
+}
+
+function applyMarketDataPayload(payload) {
+  state.marketData = payload.rows;
+  setText("rowsLoaded", String(payload.row_count));
+  setText("latestTimestamp", payload.latest_timestamp.replace("T", " "));
+  renderChart(payload.rows);
 }
 
 async function loadMarketData() {
@@ -128,10 +113,7 @@ async function loadMarketData() {
   if (!response.ok) {
     throw new Error(payload.error || "Market data request failed.");
   }
-  state.marketData = payload.rows;
-  setText("rowsLoaded", String(payload.row_count));
-  setText("latestTimestamp", payload.latest_timestamp.replace("T", " "));
-  renderChart(payload.rows);
+  applyMarketDataPayload(payload);
 }
 
 async function runAnalysis() {
@@ -165,6 +147,7 @@ async function runAnalysis() {
 
 async function sendChat(event) {
   event.preventDefault();
+  setAgentExpanded(true);
   const textarea = document.getElementById("chatPrompt");
   const prompt = textarea.value.trim();
 
@@ -193,7 +176,131 @@ async function sendChat(event) {
   setStatus("chatStatus", "Response received.", "success");
 }
 
+function renderChart(rows) {
+  const container = document.getElementById("priceChart");
+  if (!rows || !rows.length) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const visibleRows = rows.slice(-36);
+  const width = Math.max(640, container.clientWidth || 720);
+  const height = 320;
+  const paddingTop = 22;
+  const paddingRight = 74;
+  const paddingBottom = 28;
+  const paddingLeft = 18;
+  const priceAreaBottom = 220;
+  const innerWidth = width - paddingLeft - paddingRight;
+  const priceAreaHeight = priceAreaBottom - paddingTop;
+  const highs = visibleRows.map((row) => row.high);
+  const lows = visibleRows.map((row) => row.low);
+  const volumes = visibleRows.map((row) => row.volume);
+  const minPrice = Math.min(...lows);
+  const maxPrice = Math.max(...highs);
+  const maxVolume = Math.max(...volumes) || 1;
+  const rawPriceRange = maxPrice - minPrice || 1;
+  const paddedRange = rawPriceRange * 0.16;
+  const chartMin = minPrice - paddedRange;
+  const chartMax = maxPrice + paddedRange;
+  const priceRange = chartMax - chartMin || 1;
+  const candleSlotWidth = innerWidth / visibleRows.length;
+  const candleBodyWidth = Math.max(5, Math.min(12, candleSlotWidth * 0.56));
+  const volumeWidth = Math.max(4, candleSlotWidth * 0.72);
+
+  const priceToY = (value) =>
+    paddingTop + ((chartMax - value) / priceRange) * priceAreaHeight;
+
+  let svg = `<svg viewBox="0 0 ${width} ${height}" class="fallback-chart-svg" role="img" aria-label="Local candlestick chart">`;
+  [0.25, 0.5, 0.75].forEach((fraction) => {
+    const y = paddingTop + priceAreaHeight * fraction;
+    svg += `<line x1="${paddingLeft}" x2="${width - paddingRight}" y1="${y}" y2="${y}" stroke="rgba(173,211,229,0.12)" stroke-dasharray="6 10" />`;
+  });
+
+  visibleRows.forEach((row, index) => {
+    const centerX = paddingLeft + index * candleSlotWidth + candleSlotWidth / 2;
+    const isUp = row.close >= row.open;
+    const wickColor = isUp ? "#59d7bd" : "#747980";
+    const bodyFill = isUp ? "rgba(89,215,189,0.18)" : "rgba(116,121,128,0.24)";
+    const openY = priceToY(row.open);
+    const closeY = priceToY(row.close);
+    const highY = priceToY(row.high);
+    const lowY = priceToY(row.low);
+    const bodyY = Math.min(openY, closeY);
+    const bodyHeight = Math.max(1.5, Math.abs(closeY - openY));
+    const barHeight = (row.volume / maxVolume) * 64;
+
+    svg += `<line x1="${centerX}" x2="${centerX}" y1="${highY}" y2="${lowY}" stroke="${wickColor}" stroke-width="1.2" />`;
+    svg += `<rect x="${centerX - candleBodyWidth / 2}" y="${bodyY}" width="${candleBodyWidth}" height="${bodyHeight}" rx="1.5" fill="${bodyFill}" stroke="${wickColor}" stroke-width="1.1" />`;
+    svg += `<rect x="${centerX - volumeWidth / 2}" y="${height - paddingBottom - barHeight}" width="${volumeWidth}" height="${barHeight}" fill="${isUp ? "rgba(89,215,189,0.32)" : "rgba(116,121,128,0.4)"}" />`;
+  });
+
+  const latest = visibleRows[visibleRows.length - 1];
+  const closeLineY = priceToY(latest.close);
+  svg += `<line x1="${paddingLeft}" x2="${width - paddingRight}" y1="${closeLineY}" y2="${closeLineY}" stroke="${latest.close >= latest.open ? "rgba(89,215,189,0.34)" : "rgba(116,121,128,0.34)"}" stroke-dasharray="6 8" />`;
+
+  [chartMax, (chartMax + chartMin) / 2, chartMin].forEach((level, index) => {
+    const y = index === 0 ? paddingTop + 4 : index === 1 ? paddingTop + priceAreaHeight / 2 + 4 : paddingTop + priceAreaHeight + 4;
+    svg += `<text x="${width - paddingRight + 8}" y="${y}" fill="#95a9b4" font-size="11">${money.format(level)}</text>`;
+  });
+
+  const labelStep = Math.max(1, Math.floor(visibleRows.length / 6));
+  visibleRows.forEach((row, index) => {
+    if (index % labelStep !== 0 && index !== visibleRows.length - 1) return;
+    const timestamp = new Date(row.datetime);
+    const label = timestamp.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", hour12: false });
+    const x = paddingLeft + index * candleSlotWidth + candleSlotWidth / 2;
+    svg += `<text x="${x}" y="${height - 6}" fill="#8ea1ad" font-size="11" text-anchor="middle">${label}</text>`;
+  });
+
+  svg += `</svg>`;
+  container.innerHTML = svg;
+
+  const previousClose = visibleRows.length > 1 ? visibleRows[visibleRows.length - 2].close : latest.open;
+  const change = latest.close - previousClose;
+  const changePct = previousClose ? (change / previousClose) * 100 : 0;
+  setText(
+    "chartStats",
+    `O ${money.format(latest.open)}  H ${money.format(latest.high)}  L ${money.format(latest.low)}  C ${money.format(latest.close)}  ${change >= 0 ? "+" : ""}${money.format(change)} (${changePct.toFixed(2)}%)`,
+  );
+}
+
+function connectStream() {
+  if (!state.streamAvailable) {
+    return;
+  }
+
+  if (state.stream) {
+    state.stream.close();
+  }
+
+  const stream = new EventSource("/api/stream");
+  stream.addEventListener("bars", (event) => {
+    const payload = JSON.parse(event.data);
+    applyMarketDataPayload(payload);
+    setStatus("analysisStatus", "Local bars updating.", "success");
+  });
+  stream.onerror = () => {
+    setStatus("analysisStatus", "Local stream disconnected. Using last known bars.", "error");
+  };
+  state.stream = stream;
+}
+
 async function bootstrap() {
+  document.getElementById("agentToggle").addEventListener("click", () => {
+    setAgentExpanded(!state.agentExpanded);
+  });
+
+  document.getElementById("agentClose").addEventListener("click", () => {
+    setAgentExpanded(false);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && state.agentExpanded) {
+      setAgentExpanded(false);
+    }
+  });
+
   document.getElementById("analysisForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
@@ -216,6 +323,7 @@ async function bootstrap() {
 
   try {
     await Promise.all([loadHealth(), loadMarketData(), runAnalysis()]);
+    connectStream();
     addChatMessage("assistant", "Ask about the latest bar, price move, or deterministic setup state.");
   } catch (error) {
     setStatus("analysisStatus", error.message, "error");

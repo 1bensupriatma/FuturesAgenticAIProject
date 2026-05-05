@@ -3,149 +3,161 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Futures Agent Console</title>
+    <title>FibAgent Console</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="app-shell">
-      <section class="hero-band">
-        <div class="hero-copy">
-          <p class="eyebrow">Futures Agentic AI Project</p>
-          <h1>Strategy console for deterministic analysis and grounded agent chat.</h1>
-          <p class="hero-text">
-            Review the latest bars, inspect the Three-Bar Fibonacci setup, and ask
-            questions against the futures dataset without leaving the browser.
-          </p>
+      <header class="app-header">
+        <div>
+          <div class="brand-lockup" aria-label="FibAgent"><span>Fib</span>Agent</div>
+          <p id="instrumentTitle">NQ=F local chart, local strategy backend.</p>
         </div>
-        <div class="hero-stat-grid">
-          <article class="metric-tile">
-            <span class="metric-label">Rows</span>
+        <div class="header-metrics" aria-label="Data status">
+          <article>
+            <span>Rows</span>
             <strong id="rowsLoaded">-</strong>
           </article>
-          <article class="metric-tile">
-            <span class="metric-label">Last Timestamp</span>
+          <article>
+            <span>Last Timestamp</span>
             <strong id="latestTimestamp">-</strong>
           </article>
-          <article class="metric-tile">
-            <span class="metric-label">Chat Layer</span>
+          <article>
+            <span>Chat Layer</span>
             <strong id="chatAvailability">Checking</strong>
           </article>
         </div>
+      </header>
+
+      <section class="terminal-window chart-terminal" aria-label="FibAgent chart view">
+        <div class="terminal-bar">
+          <strong>FibAgent Engine - Chart View</strong>
+          <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+        <div class="chart-header">
+          <div>
+            <h1 id="chartTitle">NQ=F</h1>
+            <p id="chartStats">O - H - L - C -</p>
+          </div>
+          <span id="chartHint">5 minutes / Candles / local backend</span>
+        </div>
+        <div id="priceChart" class="price-chart" role="img" aria-label="Local futures chart"></div>
+        <p id="instrumentSubtitle" class="chart-footnote">
+          The chart and analysis use the same backend feed.
+        </p>
       </section>
 
       <section class="workspace-grid">
-        <section class="panel analysis-panel">
-          <div class="panel-header">
+        <section class="analysis-console panel">
+          <div class="panel-heading">
             <div>
-              <p class="section-kicker">Deterministic Workflow</p>
-              <h2>Setup analysis</h2>
+              <span>Local Backend</span>
+              <h2>Setup Analysis</h2>
             </div>
-            <button id="refreshAnalysis" class="icon-button" type="button" aria-label="Refresh analysis">
-              ↻
-            </button>
+            <button id="refreshAnalysis" class="icon-button" type="button" aria-label="Refresh analysis">R</button>
           </div>
 
           <form id="analysisForm" class="controls-grid">
             <label class="control">
-              <span>Stop offset</span>
+              <span>Stop Offset</span>
               <input id="stopOffset" name="stop_offset" type="number" value="1" min="0" step="0.25" />
             </label>
             <label class="control">
-              <span>Reward multiple</span>
+              <span>Reward Multiple</span>
               <input id="rewardMultiple" name="reward_multiple" type="number" value="2" min="0.5" step="0.25" />
             </label>
             <label class="toggle-control">
               <input id="useVwapFilter" name="use_vwap_filter" type="checkbox" checked />
-              <span>Use VWAP filter</span>
+              <span>VWAP Filter</span>
             </label>
-            <button class="primary-button" type="submit">Run analysis</button>
+            <button class="primary-button" type="submit">Run Analysis</button>
           </form>
 
           <div id="analysisStatus" class="status-line"></div>
 
           <div class="signal-strip">
-            <article class="signal-card">
-              <span class="signal-label">Setup</span>
+            <article>
+              <span>Setup</span>
               <strong id="setupDetected">-</strong>
             </article>
-            <article class="signal-card">
-              <span class="signal-label">Direction</span>
+            <article>
+              <span>Direction</span>
               <strong id="directionValue">-</strong>
             </article>
-            <article class="signal-card">
-              <span class="signal-label">Impulse</span>
+            <article>
+              <span>Impulse</span>
               <strong id="impulseType">-</strong>
             </article>
-            <article class="signal-card">
-              <span class="signal-label">VWAP</span>
+            <article>
+              <span>VWAP</span>
               <strong id="vwapAlignment">-</strong>
             </article>
           </div>
 
           <div class="trade-grid">
-            <article class="trade-card">
+            <article>
               <span>Entry</span>
               <strong id="entryValue">-</strong>
             </article>
-            <article class="trade-card">
+            <article>
               <span>Stop</span>
               <strong id="stopValue">-</strong>
             </article>
-            <article class="trade-card">
+            <article>
               <span>Target</span>
               <strong id="targetValue">-</strong>
             </article>
-            <article class="trade-card">
+            <article>
               <span>R/R</span>
               <strong id="riskRewardValue">-</strong>
             </article>
           </div>
 
-          <div class="chart-panel">
-            <div class="chart-header">
-              <h3>Latest bars</h3>
-              <span id="chartHint">Trailing 60 rows</span>
-            </div>
-            <svg id="priceChart" viewBox="0 0 720 280" role="img" aria-label="Price chart"></svg>
-          </div>
-
           <div class="details-grid">
-            <article class="detail-panel">
-              <h3>Retracement zone</h3>
+            <article>
+              <h3>Retracement Zone</h3>
               <pre id="retraceZone">-</pre>
             </article>
-            <article class="detail-panel">
-              <h3>LLM payload</h3>
+            <article>
+              <h3>Structured Output</h3>
               <pre id="llmPayload">-</pre>
             </article>
           </div>
         </section>
-
-        <section class="panel chat-panel">
-          <div class="panel-header">
-            <div>
-              <p class="section-kicker">Grounded Agent</p>
-              <h2>Dataset chat</h2>
-            </div>
-          </div>
-
-          <div id="chatStatus" class="status-line muted">
-            Ask about price movement, rollover, or contract snapshots.
-          </div>
-
-          <div id="chatTranscript" class="chat-transcript"></div>
-
-          <form id="chatForm" class="chat-composer">
-            <textarea
-              id="chatPrompt"
-              rows="4"
-              placeholder="Ask about the latest move, trend, or dataset state."
-            ></textarea>
-            <button class="primary-button" type="submit">Send</button>
-          </form>
-        </section>
       </section>
     </main>
+
+    <aside id="agentWidget" class="agent-widget is-collapsed" aria-label="Floating chat agent">
+      <button
+        id="agentToggle"
+        class="agent-toggle"
+        type="button"
+        aria-label="Open chat agent"
+        aria-expanded="false"
+        aria-controls="agentPanel"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 5.8C4 4.8 4.8 4 5.8 4h12.4c1 0 1.8.8 1.8 1.8v8.4c0 1-.8 1.8-1.8 1.8H9.4L5 20v-4.2c-.6-.3-1-.9-1-1.6V5.8Z" />
+          <path d="M8 9h8M8 12h5" />
+        </svg>
+      </button>
+
+      <section id="agentPanel" class="chat-console panel" aria-label="Grounded agent chat">
+        <div class="panel-heading">
+          <div>
+            <span>Grounded Agent</span>
+            <h2>Dataset Chat</h2>
+          </div>
+          <button id="agentClose" class="icon-button" type="button" aria-label="Collapse chat agent">&times;</button>
+        </div>
+        <div id="chatStatus" class="status-line muted">Ask about price movement, rollover, or contract snapshots.</div>
+        <div id="chatTranscript" class="chat-transcript"></div>
+        <form id="chatForm" class="chat-composer">
+          <textarea id="chatPrompt" rows="4" placeholder="Ask about the latest move, trend, or dataset state."></textarea>
+          <button class="primary-button" type="submit">Send</button>
+        </form>
+      </section>
+    </aside>
 
     <script src="/app.js" defer></script>
   </body>

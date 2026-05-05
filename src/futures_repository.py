@@ -28,9 +28,12 @@ class FuturesDataRepository:
         "open_interest": ["open_interest", "oi"],
     }
 
-    def __init__(self, csv_path):
-        self.csv_path = Path(csv_path)
-        self.dataframe = self._load_csv(self.csv_path)
+    def __init__(self, csv_path=None, dataframe=None):
+        self.csv_path = Path(csv_path) if csv_path is not None else None
+        if dataframe is None:
+            self.dataframe = self._load_csv(self.csv_path)
+        else:
+            self.dataframe = dataframe.copy()
         self.columns = self._resolve_columns(self.dataframe.columns)
         self.dataframe = self._normalize_dataframe(self.dataframe, self.columns)
 

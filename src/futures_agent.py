@@ -7,7 +7,7 @@ except ImportError:
     from futures_tools import TOOLS_SCHEMA, FuturesToolbox
 
 
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-4o"
 
 
 DEFAULT_POLICY_PATH = Path(__file__).with_name("futures_policy.txt")

@@ -98,8 +98,11 @@ TOOLS_SCHEMA = [
 
 
 class FuturesToolbox:
-    def __init__(self, csv_path=None):
-        self.repository = FuturesDataRepository.from_default_path(csv_path or DEFAULT_FUTURES_CSV)
+    def __init__(self, csv_path=None, dataframe=None):
+        if dataframe is not None:
+            self.repository = FuturesDataRepository(dataframe=dataframe)
+        else:
+            self.repository = FuturesDataRepository.from_default_path(csv_path or DEFAULT_FUTURES_CSV)
 
     def execute(self, tool_name, args):
         if tool_name == "list_available_contracts":

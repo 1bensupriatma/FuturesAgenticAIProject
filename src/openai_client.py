@@ -12,7 +12,7 @@ from openai import OpenAI
 load_dotenv()
 
 # Default configuration
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = "gpt-4o"
 
 def get_client():
     """
@@ -49,7 +49,7 @@ def generate_text(
     
     Args:
         prompt (str): The input text prompt.
-        model_name (str): The name of the model to use (default: gpt-4o-mini).
+        model_name (str): The name of the model to use (default: gpt-4o).
         system_instruction (str): Optional system instructions to guide the model.
         temperature (float): Controls randomness (0.0 to 2.0). Lower = more focused, higher = more creative.
         max_tokens (int): Maximum number of tokens to generate. Controls response length and cost.

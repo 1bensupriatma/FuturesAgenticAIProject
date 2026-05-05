@@ -3,21 +3,23 @@
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 from .backtest import run_backtest
 from .data_loader import load_csv
 from .indicators import calculate_vwap
 from .strategy import analyze_three_bar_setup
 
 
-def run_analysis(
-    csv_path: str | Path,
+def run_analysis_from_dataframe(
+    df: pd.DataFrame,
     use_vwap_filter: bool = True,
     run_historical_backtest: bool = False,
     stop_offset: float = 1.0,
     reward_multiple: float = 2.0,
 ) -> dict[str, Any]:
-    """Run the deterministic project workflow from CSV to structured output."""
-    df = load_csv(csv_path)
+    """Run the deterministic workflow from an in-memory dataframe."""
+    df = df.copy()
     df["vwap"] = calculate_vwap(df)
 
     if len(df) < 3:
@@ -63,3 +65,21 @@ def run_analysis(
         )
 
     return output
+
+
+def run_analysis(
+    csv_path: str | Path,
+    use_vwap_filter: bool = True,
+    run_historical_backtest: bool = False,
+    stop_offset: float = 1.0,
+    reward_multiple: float = 2.0,
+) -> dict[str, Any]:
+    """Run the deterministic project workflow from CSV to structured output."""
+    df = load_csv(csv_path)
+    return run_analysis_from_dataframe(
+        df,
+        use_vwap_filter=use_vwap_filter,
+        run_historical_backtest=run_historical_backtest,
+        stop_offset=stop_offset,
+        reward_multiple=reward_multiple,
+    )
