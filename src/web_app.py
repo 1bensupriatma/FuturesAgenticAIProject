@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import mimetypes
 import os
+import sys
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +20,7 @@ from .live_data import create_live_data_hub, infer_timeframe_minutes
 ROOT_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = ROOT_DIR / "web"
 DEFAULT_DATA_PATH = ROOT_DIR / "data" / "sample_futures_data.csv"
+MVP_DATA_PATH = ROOT_DIR / "sample_data.csv"
 DEFAULT_DISPLAY_METADATA = {
     "symbol": os.getenv("DISPLAY_SYMBOL", "NQ=F"),
     "timeframe": os.getenv("DISPLAY_TIMEFRAME", "5 minutes"),
@@ -28,6 +30,13 @@ DEFAULT_DISPLAY_METADATA = {
     "point_value": os.getenv("DISPLAY_POINT_VALUE", "20"),
     "precision": os.getenv("DISPLAY_PRECISION", "Default"),
 }
+
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from data_loader import load_candles as load_mvp_candles  # noqa: E402
+from llm_explainer import explain_result as explain_mvp_result  # noqa: E402
+from strategy import analyze_candles as analyze_mvp_candles  # noqa: E402
 
 
 def _json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int = 200) -> None:
@@ -40,6 +49,64 @@ def _json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int =
     handler.wfile.write(body)
 
 
+def _mvp_candles_from_dataframe(dataframe) -> list[dict]:
+    candles = []
+    for _, row in dataframe.iterrows():
+        timestamp = row["datetime"]
+        candles.append(
+            {
+                "timestamp": timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp),
+                "open": float(row["open"]),
+                "high": float(row["high"]),
+                "low": float(row["low"]),
+                "close": float(row["close"]),
+                "volume": float(row["volume"]),
+            }
+        )
+    return candles
+
+
+def _run_mvp_analysis(
+    reward_multiple: float = 2.0,
+    stop_buffer: float = 1.0,
+    dataframe=None,
+    data_source: str = "sample_data.csv",
+) -> dict:
+    if dataframe is None:
+        candles = load_mvp_candles(MVP_DATA_PATH)
+        data_path = str(MVP_DATA_PATH)
+    else:
+        candles = _mvp_candles_from_dataframe(dataframe)
+        data_path = None
+
+    result = analyze_mvp_candles(
+        candles,
+        reward_multiple=reward_multiple,
+        stop_buffer=stop_buffer,
+    )
+    rows = [
+        {
+            "timestamp": row["timestamp"],
+            "datetime": row["timestamp"],
+            "open": row["open"],
+            "high": row["high"],
+            "low": row["low"],
+            "close": row["close"],
+            "volume": row["volume"],
+        }
+        for row in candles
+    ]
+    return {
+        "data_source": data_source,
+        "data_path": data_path,
+        "row_count": len(candles),
+        "latest_timestamp": candles[-1]["timestamp"],
+        "result": result,
+        "explanation": explain_mvp_result(result),
+        "rows": rows,
+    }
+
+
 def _safe_static_path(request_path: str) -> Path | None:
     relative = request_path.lstrip("/") or "index.html"
     candidate = (STATIC_DIR / relative).resolve()
@@ -48,6 +115,39 @@ def _safe_static_path(request_path: str) -> Path | None:
     except ValueError:
         return None
     return candidate
+
+
+def _market_bias_from_dataframe(dataframe) -> dict:
+    if dataframe is None or len(dataframe) < 2:
+        return {"direction": None, "confidence_score": 0, "reason": "Not enough bars to compare."}
+
+    lookback = min(10, len(dataframe) - 1)
+    latest = dataframe.iloc[-1]
+    previous = dataframe.iloc[-2]
+    baseline = dataframe.iloc[-lookback - 1]
+    close_change = float(latest["close"] - baseline["close"])
+    latest_bar_change = float(latest["close"] - latest["open"])
+    previous_close_change = float(latest["close"] - previous["close"])
+
+    bullish_votes = sum(value > 0 for value in (close_change, latest_bar_change, previous_close_change))
+    bearish_votes = sum(value < 0 for value in (close_change, latest_bar_change, previous_close_change))
+
+    if bullish_votes > bearish_votes:
+        direction = "bullish"
+    elif bearish_votes > bullish_votes:
+        direction = "bearish"
+    else:
+        direction = None
+
+    confidence_score = 0 if direction is None else 50 + (max(bullish_votes, bearish_votes) * 10)
+    return {
+        "direction": direction,
+        "confidence_score": min(confidence_score, 80),
+        "lookback_bars": lookback,
+        "close_change": close_change,
+        "latest_bar_change": latest_bar_change,
+        "previous_close_change": previous_close_change,
+    }
 
 
 class FuturesWebHandler(BaseHTTPRequestHandler):
@@ -85,6 +185,10 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/market-data":
             self._handle_market_data()
+            return
+
+        if parsed.path == "/api/mvp/analyze":
+            self._handle_mvp_analyze(parsed.query)
             return
 
         if parsed.path == "/api/analyze":
@@ -170,6 +274,26 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 "timeframe_minutes": infer_timeframe_minutes(dataframe),
             },
         )
+
+    def _handle_mvp_analyze(self, query: str) -> None:
+        params = parse_qs(query)
+        reward_multiple = float(params.get("reward_multiple", ["2.0"])[0])
+        stop_buffer = float(params.get("stop_buffer", ["1.0"])[0])
+
+        try:
+            dataframe = None if self.live_data_hub is None else self.live_data_hub.dataframe()
+            data_source = "sample_data.csv" if dataframe is None else self.live_data_hub.provider_name
+            payload = _run_mvp_analysis(
+                reward_multiple=reward_multiple,
+                stop_buffer=stop_buffer,
+                dataframe=dataframe,
+                data_source=data_source,
+            )
+        except Exception as exc:
+            _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+            return
+
+        _json_response(self, payload)
 
     def _handle_stream(self) -> None:
         if self.live_data_hub is None:
@@ -257,14 +381,44 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            if self.live_data_hub is not None:
-                from .futures_tools import FuturesToolbox
+            from .futures_tools import FuturesToolbox
+            import pandas as pd
 
-                dataframe = self.live_data_hub.dataframe()
-                symbol = self.display_metadata.get("symbol", "NQ=F")
-                dataframe = dataframe.assign(symbol=symbol, contract=symbol)
-                self.agent_instance.toolbox = FuturesToolbox(dataframe=dataframe)
-            answer = self.agent_instance.ask(prompt)
+            symbol = self.display_metadata.get("symbol", "NQ=F")
+            timeframe = self.display_metadata.get("timeframe", "5 minutes")
+            live_dataframe = None if self.live_data_hub is None else self.live_data_hub.dataframe()
+            data_source = "sample_data.csv" if live_dataframe is None else self.live_data_hub.provider_name
+            mvp_payload = _run_mvp_analysis(dataframe=live_dataframe, data_source=data_source)
+            setup_context = mvp_payload["result"]
+            market_bias_context = {
+                "direction": setup_context["direction"],
+                "confidence_score": setup_context["confidence_score"],
+                "source": "FibAgent MVP deterministic strategy",
+            }
+            toolbox_dataframe = pd.DataFrame(mvp_payload["rows"]).assign(symbol=symbol, contract=symbol)
+            request_toolbox = FuturesToolbox(dataframe=toolbox_dataframe)
+
+            contextual_prompt = (
+                "Current FibAgent chart context:\n"
+                f"- Default symbol/contract: {symbol}\n"
+                f"- Timeframe: {timeframe}\n"
+                f"- Data provider: {mvp_payload['data_source']}\n"
+                f"- Current deterministic setup state: {json.dumps(setup_context, default=str)}\n"
+                f"- Current market bias state: {json.dumps(market_bias_context, default=str)}\n"
+                "- If the user omits a symbol or contract, use the default symbol/contract above.\n"
+                "- If the user asks whether the market data is bullish or bearish, and does not explicitly ask "
+                "for a trade setup, use the current market bias state for the answer.\n"
+                "- When answering setup questions, treat the deterministic setup state as authoritative. "
+                "Explain in plain English whether a valid setup exists and whether entry, stop, and target "
+                "are available. Do not invent trade levels when setup_found is false.\n"
+                "- Return JSON only if the user explicitly asks for JSON, structured output, schema output, "
+                "or a machine-readable response. If JSON is requested, return exactly these keys: direction, "
+                "entry, stop, target, confidence_score. Do not wrap it in markdown.\n"
+                "- For questions about latest price, OHLCV, movement, trend, setup state, or dataset state, "
+                "use the available tools or deterministic context instead of asking the user to repeat the symbol.\n\n"
+                f"User question: {prompt}"
+            )
+            answer = self.agent_instance.ask(contextual_prompt, toolbox=request_toolbox)
         except Exception as exc:
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
             return
@@ -300,7 +454,10 @@ def build_handler(data_path: str | Path | None = None):
         ConfiguredFuturesWebHandler.agent_error = str(exc)
     else:
         try:
-            ConfiguredFuturesWebHandler.agent_instance = FuturesAgent(csv_path=ConfiguredFuturesWebHandler.data_path)
+            ConfiguredFuturesWebHandler.agent_instance = FuturesAgent(
+                csv_path=ConfiguredFuturesWebHandler.data_path,
+                preserve_history=False,
+            )
             ConfiguredFuturesWebHandler.agent_error = None
         except Exception as exc:
             ConfiguredFuturesWebHandler.agent_instance = None

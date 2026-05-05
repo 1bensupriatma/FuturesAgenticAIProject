@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FibAgent MVP Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="app-header">
+        <div>
+          <div class="brand-lockup" aria-label="FibAgent"><span>Fib</span>Agent</div>
+          <p>Standalone MVP using deterministic rules and local sample data.</p>
+        </div>
+        <div class="header-metrics" aria-label="MVP status">
+          <article>
+            <span>Data Source</span>
+            <strong id="dataSource">sample_data.csv</strong>
+          </article>
+          <article>
+            <span>Rows</span>
+            <strong id="rowsLoaded">-</strong>
+          </article>
+          <article>
+            <span>Latest Timestamp</span>
+            <strong id="latestTimestamp">-</strong>
+          </article>
+        </div>
+      </header>
+
+      <section class="terminal-window chart-terminal" aria-label="FibAgent MVP chart view">
+        <div class="terminal-bar">
+          <strong>FibAgent MVP - Local CSV Chart</strong>
+          <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+        </div>
+        <div class="chart-header">
+          <div>
+            <h1>Sample Futures</h1>
+            <p id="chartStats">O - H - L - C -</p>
+          </div>
+          <span>5 minutes · Candles · deterministic MVP</span>
+        </div>
+        <div id="priceChart" class="price-chart" role="img" aria-label="MVP sample candlestick chart"></div>
+        <p class="chart-footnote">The website uses the duplicated MVP files inside <code>fibagent_mvp_site/core</code>.</p>
+      </section>
+
+      <section class="workspace-grid">
+        <section class="analysis-console panel">
+          <div class="panel-heading">
+            <div>
+              <span>Deterministic Strategy Engine</span>
+              <h2>Setup Analysis</h2>
+            </div>
+            <button id="runAnalysis" class="icon-button" type="button" aria-label="Run analysis">R</button>
+          </div>
+
+          <div class="controls-grid">
+            <button id="runPrimary" class="primary-button" type="button">Run MVP Analysis</button>
+            <div id="analysisStatus" class="status-line">Ready. Run analysis to inspect the sample data.</div>
+          </div>
+
+          <div class="signal-strip">
+            <article>
+              <span>Setup</span>
+              <strong id="setupFound">-</strong>
+            </article>
+            <article>
+              <span>Direction</span>
+              <strong id="directionValue">-</strong>
+            </article>
+            <article>
+              <span>Confidence</span>
+              <strong id="confidenceScore">-</strong>
+            </article>
+            <article>
+              <span>LLM Role</span>
+              <strong>Explain Only</strong>
+            </article>
+          </div>
+
+          <div class="trade-grid">
+            <article>
+              <span>Entry</span>
+              <strong id="entryValue">-</strong>
+            </article>
+            <article>
+              <span>Stop Loss</span>
+              <strong id="stopValue">-</strong>
+            </article>
+            <article>
+              <span>Take Profit</span>
+              <strong id="targetValue">-</strong>
+            </article>
+            <article>
+              <span>Fib Zone</span>
+              <strong id="fibZoneValue">-</strong>
+            </article>
+          </div>
+
+          <div class="details-grid">
+            <article>
+              <h3>Structured Strategy JSON</h3>
+              <pre id="strategyJson">Run analysis to generate JSON.</pre>
+            </article>
+            <article>
+              <h3>Plain-English Explanation</h3>
+              <pre id="explanationText">The explainer cannot change strategy numbers.</pre>
+            </article>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script src="/app.js" defer></script>
+  </body>
+</html>

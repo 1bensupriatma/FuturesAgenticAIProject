@@ -47,6 +47,15 @@ function formatValue(value) {
   return String(value);
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function addChatMessage(role, text) {
   const container = document.getElementById("chatTranscript");
   const wrapper = document.createElement("article");
@@ -89,12 +98,13 @@ async function loadHealth() {
   const currency = metadata.currency || "USD";
   const tickSize = metadata.tick_size || "0.25";
   const pointValue = metadata.point_value || "20";
-  const providerLabel = formatProviderLabel(payload.live_data_provider || payload.data_source);
-  state.streamAvailable = Boolean(payload.live_data_provider);
-  setText("instrumentTitle", `${symbol} local chart, local strategy backend.`);
-  setText("instrumentSubtitle", `The chart and analysis below use the same backend feed. Provider ${providerLabel} · ${timeframeLabel} · ${chartType.toLowerCase()} · ${currency} · tick ${tickSize} · point value ${pointValue}`);
+  const providerLabel = "Yahoo Finance via FibAgent MVP";
+  state.streamAvailable = false;
+  setText("instrumentTitle", `${symbol} shell with FibAgent MVP strategy output.`);
+  setText("instrumentSubtitle", `The chart and setup analysis use Yahoo Finance bars through the deterministic MVP strategy. ${timeframeLabel} · ${chartType.toLowerCase()} · ${currency} · tick ${tickSize} · point value ${pointValue}`);
   setText("chartTitle", symbol);
   setText("chartHint", `${timeframeLabel} · ${chartType} · ${providerLabel}`);
+  setText("analysisSource", providerLabel);
   if (!payload.agent_available && payload.agent_error) {
     setStatus("chatStatus", `Chat unavailable: ${payload.agent_error}`, "error");
   }
@@ -108,7 +118,7 @@ function applyMarketDataPayload(payload) {
 }
 
 async function loadMarketData() {
-  const response = await fetch("/api/market-data");
+  const response = await fetch("/api/mvp/analyze");
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || "Market data request failed.");
@@ -120,29 +130,30 @@ async function runAnalysis() {
   setStatus("analysisStatus", "Running analysis...");
 
   const params = new URLSearchParams({
-    stop_offset: document.getElementById("stopOffset").value,
+    stop_buffer: document.getElementById("stopOffset").value,
     reward_multiple: document.getElementById("rewardMultiple").value,
-    use_vwap_filter: String(document.getElementById("useVwapFilter").checked),
   });
 
-  const response = await fetch(`/api/analyze?${params.toString()}`);
+  const response = await fetch(`/api/mvp/analyze?${params.toString()}`);
   const payload = await response.json();
   if (!response.ok) {
     throw new Error(payload.error || "Analysis failed.");
   }
 
-  const setup = payload.latest_setup;
-  setText("setupDetected", setup.setup_detected ? "Detected" : "No setup");
-  setText("directionValue", setup.direction || "None");
-  setText("impulseType", setup.impulse_type || "None");
-  setText("vwapAlignment", setup.vwap_alignment === null ? "N/A" : String(setup.vwap_alignment));
-  setText("entryValue", formatValue(setup.entry));
-  setText("stopValue", formatValue(setup.stop));
-  setText("targetValue", formatValue(setup.target));
-  setText("riskRewardValue", formatValue(setup.risk_reward));
-  setText("retraceZone", JSON.stringify(setup.retrace_zone, null, 2));
-  setText("llmPayload", JSON.stringify(payload.llm_payload, null, 2));
-  setStatus("analysisStatus", "Analysis refreshed.", "success");
+  const result = payload.result;
+  applyMarketDataPayload(payload);
+  setText("analysisSource", `FibAgent MVP · ${payload.data_source}`);
+  setText("setupDetected", result.setup_found ? "Found" : "No setup");
+  setText("directionValue", result.direction || "neutral");
+  setText("impulseType", String(result.confidence_score));
+  setText("vwapAlignment", payload.data_source);
+  setText("entryValue", formatValue(result.entry));
+  setText("stopValue", formatValue(result.stop_loss));
+  setText("targetValue", formatValue(result.take_profit));
+  setText("riskRewardValue", "Explain only");
+  setText("retraceZone", JSON.stringify(result.entry_zone, null, 2));
+  setText("llmPayload", `${JSON.stringify(result, null, 2)}\n\n${payload.explanation}`);
+  setStatus("analysisStatus", "MVP analysis refreshed.", "success");
 }
 
 async function sendChat(event) {
@@ -253,6 +264,40 @@ function renderChart(rows) {
     svg += `<text x="${x}" y="${height - 6}" fill="#8ea1ad" font-size="11" text-anchor="middle">${label}</text>`;
   });
 
+  visibleRows.forEach((row, index) => {
+    const centerX = paddingLeft + index * candleSlotWidth + candleSlotWidth / 2;
+    const tooltipWidth = 146;
+    const tooltipHeight = 120;
+    const tooltipX = Math.min(
+      width - paddingRight - tooltipWidth - 4,
+      Math.max(paddingLeft + 4, centerX - tooltipWidth / 2),
+    );
+    const tooltipY = centerX > width * 0.74 ? paddingTop + 8 : priceAreaBottom + 8;
+    const timestamp = new Date(row.datetime);
+    const timestampLabel = escapeHtml(
+      timestamp.toLocaleString([], {
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      }),
+    );
+    const directionClass = row.close >= row.open ? "up" : "down";
+
+    svg += `<g class="candle-hover-group">`;
+    svg += `<rect class="candle-hit-area" x="${paddingLeft + index * candleSlotWidth}" y="${paddingTop}" width="${candleSlotWidth}" height="${height - paddingBottom - paddingTop}" />`;
+    svg += `<line class="candle-crosshair" x1="${centerX}" x2="${centerX}" y1="${paddingTop}" y2="${height - paddingBottom}" />`;
+    svg += `<g class="candle-tooltip ${directionClass}" transform="translate(${tooltipX} ${tooltipY})">`;
+    svg += `<rect width="${tooltipWidth}" height="${tooltipHeight}" rx="6" />`;
+    svg += `<text x="10" y="18" class="tooltip-title">${timestampLabel}</text>`;
+    svg += `<text x="10" y="40">O ${money.format(row.open)}</text>`;
+    svg += `<text x="10" y="58">H ${money.format(row.high)}</text>`;
+    svg += `<text x="10" y="76">L ${money.format(row.low)}</text>`;
+    svg += `<text x="10" y="94">C ${money.format(row.close)}</text>`;
+    svg += `<text x="10" y="112">V ${money.format(row.volume)}</text>`;
+    svg += `</g></g>`;
+  });
+
   svg += `</svg>`;
   container.innerHTML = svg;
 
@@ -319,11 +364,20 @@ async function bootstrap() {
     }
   });
 
-  document.getElementById("chatForm").addEventListener("submit", sendChat);
+  const chatForm = document.getElementById("chatForm");
+  const chatPrompt = document.getElementById("chatPrompt");
+  chatForm.addEventListener("submit", sendChat);
+  chatPrompt.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      chatForm.requestSubmit();
+    }
+  });
 
   try {
-    await Promise.all([loadHealth(), loadMarketData(), runAnalysis()]);
+    await Promise.all([loadHealth(), loadMarketData()]);
     connectStream();
+    setStatus("analysisStatus", "Ready. Run analysis to check the current setup.");
     addChatMessage("assistant", "Ask about the latest bar, price move, or deterministic setup state.");
   } catch (error) {
     setStatus("analysisStatus", error.message, "error");

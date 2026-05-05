@@ -16,10 +16,11 @@ DEFAULT_POLICY_PATH = Path(__file__).with_name("futures_policy.txt")
 class FuturesAgent:
     """Minimal tool-calling agent for grounded futures-market analysis."""
 
-    def __init__(self, csv_path=None, policy_path=None, model_name=DEFAULT_MODEL, client=None):
+    def __init__(self, csv_path=None, policy_path=None, model_name=DEFAULT_MODEL, client=None, preserve_history=True):
         self.client = client or self._build_client()
         self.model_name = model_name
         self.toolbox = FuturesToolbox(csv_path=csv_path)
+        self.preserve_history = preserve_history
         self.system_policy = self._load_policy(policy_path or DEFAULT_POLICY_PATH)
         self.messages = [{"role": "system", "content": self.system_policy}]
 
@@ -57,19 +58,21 @@ class FuturesAgent:
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
-    def _request_completion(self):
+    def _request_completion(self, messages):
         return self.client.chat.completions.create(
             model=self.model_name,
-            messages=self.messages,
+            messages=messages,
             temperature=0,
             tools=TOOLS_SCHEMA,
         )
 
-    def ask(self, prompt, max_iterations=6):
-        self.messages.append({"role": "user", "content": prompt})
+    def ask(self, prompt, max_iterations=6, toolbox=None):
+        messages = self.messages if self.preserve_history else [{"role": "system", "content": self.system_policy}]
+        active_toolbox = toolbox or self.toolbox
+        messages.append({"role": "user", "content": prompt})
 
         for _ in range(max_iterations):
-            response = self._request_completion()
+            response = self._request_completion(messages)
             message = response.choices[0].message
 
             assistant_message = {
@@ -88,15 +91,17 @@ class FuturesAgent:
                     }
                     for call in message.tool_calls
                 ]
-            self.messages.append(assistant_message)
+            messages.append(assistant_message)
 
             if not message.tool_calls:
+                if self.preserve_history:
+                    self.messages = messages
                 return message.content
 
             for tool_call in message.tool_calls:
                 args = self._parse_tool_args(tool_call)
-                tool_result = self.toolbox.execute(tool_call.function.name, args)
-                self.messages.append(
+                tool_result = active_toolbox.execute(tool_call.function.name, args)
+                messages.append(
                     {
                         "role": "tool",
                         "tool_call_id": tool_call.id,
@@ -104,6 +109,8 @@ class FuturesAgent:
                     }
                 )
 
+        if self.preserve_history:
+            self.messages = messages
         return "The agent stopped after reaching the maximum tool-iteration limit."
 
 

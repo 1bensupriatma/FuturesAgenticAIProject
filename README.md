@@ -1,90 +1,123 @@
-# FuturesAgenticAIProject
+# FibAgent
 
-Educational Agentic AI project for the Two-Bar Fibonacci Retrace strategy in
-intraday futures analysis.
+FibAgent is an academic Python MVP for AI-assisted futures trading analysis. It
+analyzes 5-minute futures candle data and detects a deterministic Two-Bar
+Fibonacci Retracement setup.
 
-This project is not a trading bot. It is a deterministic Python analysis tool
-with an optional LLM explanation layer. Trading logic is handled by small,
-testable Python functions; the LLM is only used to summarize and interpret the
-structured results.
+FibAgent does not connect to a broker, place trades, or randomly predict market
+direction. The strategy engine calculates the result first. The LLM layer is
+only allowed to explain the validated JSON output.
 
-## Project Goals
+## Why Deterministic Rules Come First
 
-- Detect valid Two-Bar Fibonacci Retrace impulses.
-- Compute Bar 2 retracement zones.
-- Check Bar 3 entry triggers.
-- Apply an optional VWAP alignment filter.
-- Produce a structured trade plan with entry, stop, target, and risk/reward.
-- Leave clear extension points for ICT levels and historical backtesting.
-- Provide a Jupyter Notebook outline suitable for a class project deliverable.
+Trading analysis needs repeatable rules. If an LLM is allowed to invent entries,
+stops, or targets, the result can become inconsistent and unsafe.
 
-## Strategy Rules
+FibAgent avoids that by using Python functions for:
 
-Impulse detection uses the last two completed bars:
+- candle body-size validation
+- two-bar impulse detection
+- volume confirmation
+- VWAP validation
+- Fibonacci retracement-zone calculation
+- entry, stop loss, take profit, and confidence score
 
-- Each bar body must be at least 50% of its total range.
-- Bar 2 volume must be greater than Bar 1 volume.
-- Valid impulse types:
-  - matched bullish: both bars close above open
-  - matched bearish: both bars close below open
-  - mixed bullish: opposite colors and Bar 2 closes above Bar 1 high
-  - mixed bearish: opposite colors and Bar 2 closes below Bar 1 low
+The LLM explainer can describe the result, but it cannot change any numbers.
 
-Retracement is based only on Bar 2:
+## Agentic Workflow
 
-- Bullish setup: retracement zone is the 50% to 61.8% pullback from Bar 2 high
-  toward Bar 2 low.
-- Bearish setup: retracement zone is the 50% to 61.8% pullback from Bar 2 low
-  toward Bar 2 high.
+1. `data_loader.py` loads and validates the CSV file.
+2. `strategy.py` scans candle data using deterministic rules.
+3. `schemas.py` defines the exact JSON structure.
+4. `llm_explainer.py` explains the strategy result in plain English.
+5. `main.py` runs the full workflow from the command line.
 
-Entry trigger:
+## CSV Format
 
-- Bullish: current bar low touches the retracement zone.
-- Bearish: current bar high touches the retracement zone.
+Use a CSV file with this header:
 
-Default stop:
-
-- Bullish: Bar 2 low minus offset.
-- Bearish: Bar 2 high plus offset.
-
-## Repository Structure
-
-```text
-src/
-  agent.py
-  backtest.py
-  data_loader.py
-  ict_levels.py
-  indicators.py
-  prompts.py
-  strategy.py
-notebooks/
-  TwoBarFibAgent.ipynb
-data/
-  sample_futures_data.csv
-requirements.txt
+```csv
+timestamp,open,high,low,close,volume
 ```
 
-## Quick Start
+The included `sample_data.csv` contains a small demo dataset.
 
-Install dependencies:
+## How To Run
+
+From the project root:
 
 ```bash
-pip install -r requirements.txt
+python main.py
 ```
 
-Run the analysis workflow from Python:
+To include the plain-English explanation:
 
-```python
-from src.agent import run_analysis
-
-result = run_analysis("data/sample_futures_data.csv")
-print(result)
+```bash
+python main.py --explain
 ```
 
-Open `notebooks/TwoBarFibAgent.ipynb` for the class-project outline.
+To use another CSV file:
 
-## Safety Note
+```bash
+python main.py --csv path/to/your_data.csv
+```
 
-This repository is for education and strategy analysis only. It does not place
-orders, connect to a broker, or provide financial advice.
+If your environment only has `python3`, use:
+
+```bash
+python3 main.py --explain
+```
+
+## Example Output
+
+```json
+{
+  "setup_found": true,
+  "direction": "bullish",
+  "entry_zone": {
+    "fib_50": 104.75,
+    "fib_618": 103.98
+  },
+  "entry": 105.6,
+  "stop_loss": 100.5,
+  "take_profit": 115.8,
+  "confidence_score": 100,
+  "reasoning": [
+    "Two most recent closed candles formed a valid impulse.",
+    "Each impulse candle body was at least 50% of its full range.",
+    "Second impulse candle volume was greater than first candle volume.",
+    "Price was above VWAP.",
+    "Current candle retraced into the 50% to 61.8% Fibonacci entry zone."
+  ]
+}
+```
+
+If no setup is found, FibAgent returns:
+
+```json
+{
+  "setup_found": false,
+  "direction": "neutral",
+  "entry_zone": null,
+  "entry": null,
+  "stop_loss": null,
+  "take_profit": null,
+  "confidence_score": 0,
+  "reasoning": [
+    "No valid setup found."
+  ]
+}
+```
+
+## Reliability And Ethics Guardrails
+
+- Required CSV columns are validated before analysis.
+- Missing or invalid candle values raise clear errors.
+- The strategy engine never outputs a trade if confidence is below 70.
+- If rules do not pass, the system returns a no-trade fallback.
+- All calculations are deterministic and inspectable.
+- The LLM explainer cannot change entries, stops, targets, or confidence.
+- This project is for academic prototype/demo use only.
+- This is not financial advice.
+- This is not a trading bot.
+- No broker connection or real trade execution is included.

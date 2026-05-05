@@ -252,6 +252,53 @@ textarea {
   display: block;
 }
 
+.candle-hover-group .candle-hit-area {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.candle-hover-group .candle-crosshair,
+.candle-hover-group .candle-tooltip {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.candle-hover-group:hover .candle-crosshair,
+.candle-hover-group:hover .candle-tooltip {
+  opacity: 1;
+}
+
+.candle-crosshair {
+  stroke: rgba(236, 243, 248, 0.32);
+  stroke-dasharray: 4 7;
+  stroke-width: 1;
+}
+
+.candle-tooltip rect {
+  fill: rgba(11, 14, 23, 0.94);
+  stroke: rgba(149, 169, 180, 0.34);
+}
+
+.candle-tooltip.up rect {
+  stroke: rgba(89, 215, 189, 0.58);
+}
+
+.candle-tooltip.down rect {
+  stroke: rgba(180, 188, 197, 0.5);
+}
+
+.candle-tooltip text {
+  fill: #dce8ee;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.candle-tooltip .tooltip-title {
+  fill: #95a9b4;
+  font-weight: 800;
+}
+
 .chart-note {
   position: absolute;
   right: 16%;

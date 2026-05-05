@@ -51,15 +51,15 @@
         <section class="analysis-console panel">
           <div class="panel-heading">
             <div>
-              <span>Local Backend</span>
-              <h2>Setup Analysis</h2>
+              <span id="analysisSource">FibAgent MVP</span>
+              <h2>MVP Setup Analysis</h2>
             </div>
             <button id="refreshAnalysis" class="icon-button" type="button" aria-label="Refresh analysis">R</button>
           </div>
 
           <form id="analysisForm" class="controls-grid">
             <label class="control">
-              <span>Stop Offset</span>
+              <span>Stop Buffer</span>
               <input id="stopOffset" name="stop_offset" type="number" value="1" min="0" step="0.25" />
             </label>
             <label class="control">
@@ -68,7 +68,7 @@
             </label>
             <label class="toggle-control">
               <input id="useVwapFilter" name="use_vwap_filter" type="checkbox" checked />
-              <span>VWAP Filter</span>
+              <span>Deterministic VWAP</span>
             </label>
             <button class="primary-button" type="submit">Run Analysis</button>
           </form>
@@ -85,11 +85,11 @@
               <strong id="directionValue">-</strong>
             </article>
             <article>
-              <span>Impulse</span>
+              <span>Confidence</span>
               <strong id="impulseType">-</strong>
             </article>
             <article>
-              <span>VWAP</span>
+              <span>Source</span>
               <strong id="vwapAlignment">-</strong>
             </article>
           </div>
@@ -100,26 +100,26 @@
               <strong id="entryValue">-</strong>
             </article>
             <article>
-              <span>Stop</span>
+              <span>Stop Loss</span>
               <strong id="stopValue">-</strong>
             </article>
             <article>
-              <span>Target</span>
+              <span>Take Profit</span>
               <strong id="targetValue">-</strong>
             </article>
             <article>
-              <span>R/R</span>
+              <span>LLM Role</span>
               <strong id="riskRewardValue">-</strong>
             </article>
           </div>
 
           <div class="details-grid">
             <article>
-              <h3>Retracement Zone</h3>
+              <h3>Entry Zone</h3>
               <pre id="retraceZone">-</pre>
             </article>
             <article>
-              <h3>Structured Output</h3>
+              <h3>MVP JSON + Explanation</h3>
               <pre id="llmPayload">-</pre>
             </article>
           </div>

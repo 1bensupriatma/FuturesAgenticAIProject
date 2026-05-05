@@ -29,25 +29,19 @@ Setup detection rules:
 
 Output filtering:
 - For direct data questions, answer compactly in plain language with exact values from tools.
-- For setup analysis or trade-setup questions, output strictly valid JSON and no extra prose.
-- For uncertainty, missing data, or unsupported claims, use the fallback JSON format with setup_detected false.
+- For bullish/bearish market-direction questions, answer in plain English by default and use the supplied current market bias state for direction and confidence_score.
+- For setup analysis or trade-setup questions, answer in plain English by default. State whether there is a valid setup, and whether entry, stop, and target are available.
+- Only return JSON when the user explicitly asks for JSON, structured output, schema output, or a machine-readable response.
+- For uncertainty, missing data, or unsupported claims, say what is unavailable in plain English unless JSON was requested.
 - Confidence must be an integer from 0 to 100 and must reflect the strength of validated evidence, not user preference.
 
-Required setup-analysis JSON schema:
+Required JSON schema when JSON is requested:
 {
   "direction": "bullish|bearish|null",
   "entry": "price_level|null",
   "stop": "stop_loss|null",
   "target": "take_profit|null",
-  "confidence_score": "0-100",
-  "setup_detected": "true|false",
-  "market_structure": "validated_structure_or_null",
-  "volume_confirmation": "true|false|null",
-  "vwap_alignment": "true|false|null",
-  "evidence": [
-    "short validated evidence item"
-  ],
-  "risk_note": "descriptive analysis only, not financial advice"
+  "confidence_score": "0-100"
 }
 
 Fallback JSON when no reliable setup exists:
@@ -56,13 +50,5 @@ Fallback JSON when no reliable setup exists:
   "entry": null,
   "stop": null,
   "target": null,
-  "confidence_score": 0,
-  "setup_detected": false,
-  "market_structure": null,
-  "volume_confirmation": null,
-  "vwap_alignment": null,
-  "evidence": [
-    "Insufficient validated data to confirm a futures setup."
-  ],
-  "risk_note": "descriptive analysis only, not financial advice"
+  "confidence_score": 0
 }
