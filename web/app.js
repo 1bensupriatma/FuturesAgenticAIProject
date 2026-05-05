@@ -1,8 +1,6 @@
 const state = {
   marketData: null,
   chatAvailable: false,
-  stream: null,
-  streamAvailable: false,
   agentExpanded: false,
 };
 
@@ -10,23 +8,6 @@ const money = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
-
-function formatProviderLabel(provider) {
-  const normalized = String(provider || "").trim().toLowerCase();
-  if (normalized === "yfinance" || normalized === "yahoo" || normalized === "yahoo_finance") {
-    return "Yahoo Finance";
-  }
-  if (normalized === "databento") {
-    return "Databento";
-  }
-  if (normalized === "tradovate") {
-    return "Tradovate";
-  }
-  if (normalized === "csv_file" || normalized === "csv_replay") {
-    return "CSV replay";
-  }
-  return provider || "local backend";
-}
 
 function setText(id, value) {
   const node = document.getElementById(id);
@@ -99,7 +80,6 @@ async function loadHealth() {
   const tickSize = metadata.tick_size || "0.25";
   const pointValue = metadata.point_value || "20";
   const providerLabel = "Yahoo Finance via FibAgent MVP";
-  state.streamAvailable = false;
   setText("instrumentTitle", `${symbol} shell with FibAgent MVP strategy output.`);
   setText("instrumentSubtitle", `The chart and setup analysis use Yahoo Finance bars through the deterministic MVP strategy. ${timeframeLabel} · ${chartType.toLowerCase()} · ${currency} · tick ${tickSize} · point value ${pointValue}`);
   setText("chartTitle", symbol);
@@ -310,27 +290,6 @@ function renderChart(rows) {
   );
 }
 
-function connectStream() {
-  if (!state.streamAvailable) {
-    return;
-  }
-
-  if (state.stream) {
-    state.stream.close();
-  }
-
-  const stream = new EventSource("/api/stream");
-  stream.addEventListener("bars", (event) => {
-    const payload = JSON.parse(event.data);
-    applyMarketDataPayload(payload);
-    setStatus("analysisStatus", "Local bars updating.", "success");
-  });
-  stream.onerror = () => {
-    setStatus("analysisStatus", "Local stream disconnected. Using last known bars.", "error");
-  };
-  state.stream = stream;
-}
-
 async function bootstrap() {
   document.getElementById("agentToggle").addEventListener("click", () => {
     setAgentExpanded(!state.agentExpanded);
@@ -376,7 +335,6 @@ async function bootstrap() {
 
   try {
     await Promise.all([loadHealth(), loadMarketData()]);
-    connectStream();
     setStatus("analysisStatus", "Ready. Run analysis to check the current setup.");
     addChatMessage("assistant", "Ask about the latest bar, price move, or deterministic setup state.");
   } catch (error) {

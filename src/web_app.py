@@ -6,15 +6,12 @@ import json
 import mimetypes
 import os
 import sys
-import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from .agent import run_analysis, run_analysis_from_dataframe
-from .data_loader import load_csv
-from .live_data import create_live_data_hub, infer_timeframe_minutes
+from .live_data import create_live_data_hub
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -117,39 +114,6 @@ def _safe_static_path(request_path: str) -> Path | None:
     return candidate
 
 
-def _market_bias_from_dataframe(dataframe) -> dict:
-    if dataframe is None or len(dataframe) < 2:
-        return {"direction": None, "confidence_score": 0, "reason": "Not enough bars to compare."}
-
-    lookback = min(10, len(dataframe) - 1)
-    latest = dataframe.iloc[-1]
-    previous = dataframe.iloc[-2]
-    baseline = dataframe.iloc[-lookback - 1]
-    close_change = float(latest["close"] - baseline["close"])
-    latest_bar_change = float(latest["close"] - latest["open"])
-    previous_close_change = float(latest["close"] - previous["close"])
-
-    bullish_votes = sum(value > 0 for value in (close_change, latest_bar_change, previous_close_change))
-    bearish_votes = sum(value < 0 for value in (close_change, latest_bar_change, previous_close_change))
-
-    if bullish_votes > bearish_votes:
-        direction = "bullish"
-    elif bearish_votes > bullish_votes:
-        direction = "bearish"
-    else:
-        direction = None
-
-    confidence_score = 0 if direction is None else 50 + (max(bullish_votes, bearish_votes) * 10)
-    return {
-        "direction": direction,
-        "confidence_score": min(confidence_score, 80),
-        "lookback_bars": lookback,
-        "close_change": close_change,
-        "latest_bar_change": latest_bar_change,
-        "previous_close_change": previous_close_change,
-    }
-
-
 class FuturesWebHandler(BaseHTTPRequestHandler):
     agent_instance = None
     agent_error = None
@@ -179,20 +143,8 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if parsed.path == "/api/stream":
-            self._handle_stream()
-            return
-
-        if parsed.path == "/api/market-data":
-            self._handle_market_data()
-            return
-
         if parsed.path == "/api/mvp/analyze":
             self._handle_mvp_analyze(parsed.query)
-            return
-
-        if parsed.path == "/api/analyze":
-            self._handle_analyze(parsed.query)
             return
 
         if parsed.path == "/":
@@ -228,53 +180,6 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
-    def _handle_market_data(self) -> None:
-        if self.live_data_hub is not None:
-            _json_response(self, self.live_data_hub.snapshot())
-            return
-
-        if self.data_source_mode == "yfinance":
-            _json_response(
-                self,
-                {
-                    "error": "YFinance data source is unavailable.",
-                    "details": self.data_source_error,
-                },
-                status=HTTPStatus.SERVICE_UNAVAILABLE,
-            )
-            return
-
-        try:
-            dataframe = load_csv(self.data_path)
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-
-        rows = []
-        for _, row in dataframe.tail(60).iterrows():
-            rows.append(
-                {
-                    "datetime": row["datetime"].isoformat(),
-                    "open": float(row["open"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "close": float(row["close"]),
-                    "volume": float(row["volume"]),
-                }
-            )
-
-        _json_response(
-            self,
-            {
-                "provider": "csv_file",
-                "data_path": str(self.data_path),
-                "rows": rows,
-                "row_count": len(dataframe),
-                "latest_timestamp": dataframe.iloc[-1]["datetime"].isoformat(),
-                "timeframe_minutes": infer_timeframe_minutes(dataframe),
-            },
-        )
-
     def _handle_mvp_analyze(self, query: str) -> None:
         params = parse_qs(query)
         reward_multiple = float(params.get("reward_multiple", ["2.0"])[0])
@@ -294,65 +199,6 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             return
 
         _json_response(self, payload)
-
-    def _handle_stream(self) -> None:
-        if self.live_data_hub is None:
-            _json_response(
-                self,
-                {"error": "Live stream is unavailable."},
-                status=HTTPStatus.SERVICE_UNAVAILABLE,
-            )
-            return
-
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-
-        last_seen_version = -1
-        try:
-            while True:
-                current_version = self.live_data_hub.version()
-                if current_version != last_seen_version:
-                    self.wfile.write(self.live_data_hub.sse_payload())
-                    self.wfile.flush()
-                    last_seen_version = current_version
-                time.sleep(0.5)
-        except (BrokenPipeError, ConnectionResetError):
-            return
-
-    def _handle_analyze(self, query: str) -> None:
-        params = parse_qs(query)
-        use_vwap_filter = params.get("use_vwap_filter", ["true"])[0].lower() != "false"
-        run_historical_backtest = params.get("run_historical_backtest", ["false"])[0].lower() == "true"
-        stop_offset = float(params.get("stop_offset", ["1.0"])[0])
-        reward_multiple = float(params.get("reward_multiple", ["2.0"])[0])
-
-        try:
-            if self.live_data_hub is not None:
-                result = run_analysis_from_dataframe(
-                    self.live_data_hub.dataframe(),
-                    use_vwap_filter=use_vwap_filter,
-                    run_historical_backtest=run_historical_backtest,
-                    stop_offset=stop_offset,
-                    reward_multiple=reward_multiple,
-                )
-            elif self.data_source_mode == "yfinance":
-                raise ValueError(f"YFinance data source is unavailable: {self.data_source_error}")
-            else:
-                result = run_analysis(
-                    self.data_path,
-                    use_vwap_filter=use_vwap_filter,
-                    run_historical_backtest=run_historical_backtest,
-                    stop_offset=stop_offset,
-                    reward_multiple=reward_multiple,
-                )
-        except Exception as exc:
-            _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
-            return
-
-        _json_response(self, result)
 
     def _handle_chat(self) -> None:
         content_length = int(self.headers.get("Content-Length", "0"))

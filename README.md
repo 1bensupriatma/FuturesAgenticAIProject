@@ -1,74 +1,62 @@
 # FibAgent
 
-FibAgent is an academic Python MVP for AI-assisted futures trading analysis. It
-analyzes 5-minute futures candle data and detects a deterministic Two-Bar
-Fibonacci Retracement setup.
+FibAgent is an academic web prototype for AI-assisted futures trading analysis.
+The first website analyzes 5-minute Yahoo Finance futures candles with a
+deterministic Two-Bar Fibonacci Retracement strategy, then uses the chat layer
+only to explain the validated result.
 
 FibAgent does not connect to a broker, place trades, or randomly predict market
-direction. The strategy engine calculates the result first. The LLM layer is
-only allowed to explain the validated JSON output.
+direction.
 
-## Why Deterministic Rules Come First
+## Current Website
 
-Trading analysis needs repeatable rules. If an LLM is allowed to invent entries,
-stops, or targets, the result can become inconsistent and unsafe.
+Run the first website:
 
-FibAgent avoids that by using Python functions for:
+```bash
+./.venv/bin/python -m src.web_app
+```
 
-- candle body-size validation
-- two-bar impulse detection
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+Main endpoints:
+
+- `GET /api/health`
+- `GET /api/mvp/analyze`
+- `POST /api/chat`
+
+## How The Workflow Works
+
+1. `src/live_data.py` loads 5-minute Yahoo Finance candles through `yfinance`.
+2. `src/web_app.py` converts those bars into the MVP candle schema.
+3. `strategy.py` runs deterministic Two-Bar Fibonacci Retracement rules.
+4. `llm_explainer.py` explains the validated result without changing numbers.
+5. The browser UI in `web/` renders the chart, setup JSON, and explanation.
+6. The floating chat agent can answer questions using the validated setup and
+   market data context.
+
+If Yahoo Finance is unavailable, the MVP endpoint can fall back to
+`sample_data.csv`.
+
+## Deterministic Strategy Rules
+
+The strategy checks:
+
+- candle body size
+- two-bar impulse direction
 - volume confirmation
-- VWAP validation
-- Fibonacci retracement-zone calculation
+- VWAP condition
+- 50% and 61.8% Fibonacci retracement zone
 - entry, stop loss, take profit, and confidence score
 
-The LLM explainer can describe the result, but it cannot change any numbers.
+The strategy engine never outputs a trade if confidence is below 70.
 
-## Agentic Workflow
+## Output Shape
 
-1. `data_loader.py` loads and validates the CSV file.
-2. `strategy.py` scans candle data using deterministic rules.
-3. `schemas.py` defines the exact JSON structure.
-4. `llm_explainer.py` explains the strategy result in plain English.
-5. `main.py` runs the full workflow from the command line.
-
-## CSV Format
-
-Use a CSV file with this header:
-
-```csv
-timestamp,open,high,low,close,volume
-```
-
-The included `sample_data.csv` contains a small demo dataset.
-
-## How To Run
-
-From the project root:
-
-```bash
-python main.py
-```
-
-To include the plain-English explanation:
-
-```bash
-python main.py --explain
-```
-
-To use another CSV file:
-
-```bash
-python main.py --csv path/to/your_data.csv
-```
-
-If your environment only has `python3`, use:
-
-```bash
-python3 main.py --explain
-```
-
-## Example Output
+When a setup is found:
 
 ```json
 {
@@ -83,16 +71,12 @@ python3 main.py --explain
   "take_profit": 115.8,
   "confidence_score": 100,
   "reasoning": [
-    "Two most recent closed candles formed a valid impulse.",
-    "Each impulse candle body was at least 50% of its full range.",
-    "Second impulse candle volume was greater than first candle volume.",
-    "Price was above VWAP.",
-    "Current candle retraced into the 50% to 61.8% Fibonacci entry zone."
+    "Two most recent closed candles formed a valid impulse."
   ]
 }
 ```
 
-If no setup is found, FibAgent returns:
+When no setup is found:
 
 ```json
 {
@@ -109,15 +93,12 @@ If no setup is found, FibAgent returns:
 }
 ```
 
-## Reliability And Ethics Guardrails
+## Guardrails
 
-- Required CSV columns are validated before analysis.
-- Missing or invalid candle values raise clear errors.
-- The strategy engine never outputs a trade if confidence is below 70.
-- If rules do not pass, the system returns a no-trade fallback.
-- All calculations are deterministic and inspectable.
-- The LLM explainer cannot change entries, stops, targets, or confidence.
-- This project is for academic prototype/demo use only.
+- Deterministic Python rules produce entries, stops, targets, and confidence.
+- The LLM/chat layer can explain results, but should not invent trade levels.
+- Missing or invalid fallback CSV data raises clear validation errors.
+- The app is for academic prototype/demo use only.
 - This is not financial advice.
 - This is not a trading bot.
 - No broker connection or real trade execution is included.
