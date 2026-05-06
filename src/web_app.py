@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
 import os
 import sys
@@ -12,6 +13,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from .live_data import create_live_data_hub
+from .audit_logging import active_log_path, configure_logging, flush_transcript
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -34,6 +36,9 @@ if str(ROOT_DIR) not in sys.path:
 from data_loader import load_candles as load_mvp_candles  # noqa: E402
 from llm_explainer import explain_result as explain_mvp_result  # noqa: E402
 from strategy import analyze_candles as analyze_mvp_candles  # noqa: E402
+
+
+log = logging.getLogger("agent")
 
 
 def _json_response(handler: BaseHTTPRequestHandler, payload: dict, status: int = 200) -> None:
@@ -80,6 +85,14 @@ def _run_mvp_analysis(
         candles,
         reward_multiple=reward_multiple,
         stop_buffer=stop_buffer,
+    )
+    log.info(
+        "MVP analysis result: source=%s rows=%s setup_found=%s direction=%s confidence=%s",
+        data_source,
+        len(candles),
+        result["setup_found"],
+        result["direction"],
+        result["confidence_score"],
     )
     rows = [
         {
@@ -139,6 +152,7 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                     "data_source_error": self.data_source_error,
                     "timeframe_minutes": None if self.live_data_hub is None else self.live_data_hub.snapshot().get("timeframe_minutes"),
                     "display_metadata": self.display_metadata,
+                    "active_log_path": active_log_path(),
                 },
             )
             return
@@ -188,6 +202,12 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
         try:
             dataframe = None if self.live_data_hub is None else self.live_data_hub.dataframe()
             data_source = "sample_data.csv" if dataframe is None else self.live_data_hub.provider_name
+            log.info(
+                "MVP analysis requested: source=%s reward_multiple=%s stop_buffer=%s",
+                data_source,
+                reward_multiple,
+                stop_buffer,
+            )
             payload = _run_mvp_analysis(
                 reward_multiple=reward_multiple,
                 stop_buffer=stop_buffer,
@@ -195,9 +215,11 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 data_source=data_source,
             )
         except Exception as exc:
+            log.exception("Guardrail event: MVP analysis failed")
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             return
 
+        flush_transcript()
         _json_response(self, payload)
 
     def _handle_chat(self) -> None:
@@ -207,15 +229,18 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
         try:
             body = json.loads(raw_body.decode("utf-8"))
         except json.JSONDecodeError:
+            log.warning("Malformed chat request body: %s", raw_body.decode("utf-8", errors="replace"))
             _json_response(self, {"error": "Request body must be valid JSON."}, status=HTTPStatus.BAD_REQUEST)
             return
 
         prompt = str(body.get("prompt", "")).strip()
         if not prompt:
+            log.warning("Guardrail event: empty chat prompt rejected")
             _json_response(self, {"error": "Prompt is required."}, status=HTTPStatus.BAD_REQUEST)
             return
 
         if self.agent_instance is None:
+            log.warning("Guardrail event: chat unavailable: %s", self.agent_error)
             _json_response(
                 self,
                 {
@@ -243,6 +268,14 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             }
             toolbox_dataframe = pd.DataFrame(mvp_payload["rows"]).assign(symbol=symbol, contract=symbol)
             request_toolbox = FuturesToolbox(dataframe=toolbox_dataframe)
+            log.info(
+                "Chat request: prompt=%s setup_found=%s direction=%s confidence=%s source=%s",
+                prompt,
+                setup_context["setup_found"],
+                setup_context["direction"],
+                setup_context["confidence_score"],
+                data_source,
+            )
 
             contextual_prompt = (
                 "Current FibAgent chart context:\n"
@@ -266,13 +299,19 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             )
             answer = self.agent_instance.ask(contextual_prompt, toolbox=request_toolbox)
         except Exception as exc:
+            log.exception("Guardrail event: chat failed")
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
             return
 
+        log.info("Chat final response: %s", answer)
+        flush_transcript()
         _json_response(self, {"answer": answer})
 
 
 def build_handler(data_path: str | Path | None = None):
+    log_path = configure_logging()
+    log.info("Building web handler with audit log: %s", log_path)
+
     class ConfiguredFuturesWebHandler(FuturesWebHandler):
         pass
 
@@ -284,9 +323,11 @@ def build_handler(data_path: str | Path | None = None):
     os.environ["LIVE_DATA_PROVIDER"] = "yfinance"
     try:
         ConfiguredFuturesWebHandler.live_data_hub = create_live_data_hub(ConfiguredFuturesWebHandler.data_path)
+        log.info("Live data hub started: provider=%s", ConfiguredFuturesWebHandler.live_data_hub.provider_name)
     except Exception as exc:
         ConfiguredFuturesWebHandler.live_data_hub = None
         ConfiguredFuturesWebHandler.data_source_error = str(exc)
+        log.exception("Guardrail event: live data hub unavailable")
     finally:
         if previous_provider is None:
             os.environ.pop("LIVE_DATA_PROVIDER", None)
@@ -305,16 +346,18 @@ def build_handler(data_path: str | Path | None = None):
                 preserve_history=False,
             )
             ConfiguredFuturesWebHandler.agent_error = None
+            log.info("Agent available: log=%s", ConfiguredFuturesWebHandler.agent_instance.active_log_path)
         except Exception as exc:
             ConfiguredFuturesWebHandler.agent_instance = None
             ConfiguredFuturesWebHandler.agent_error = str(exc)
+            log.exception("Guardrail event: agent initialization failed")
 
     return ConfiguredFuturesWebHandler
 
 
 def serve(host: str = "127.0.0.1", port: int = 8000, data_path: str | Path | None = None) -> None:
     server = ThreadingHTTPServer((host, port), build_handler(data_path=data_path))
-    print(f"Futures web app running at http://{host}:{port}")
+    log.info("Futures web app running at http://%s:%s", host, port)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

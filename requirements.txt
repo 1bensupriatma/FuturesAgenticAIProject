@@ -5,3 +5,4 @@ databento
 requests
 websocket-client
 yfinance
+rich

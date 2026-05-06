@@ -1,0 +1,139 @@
+[05/05/26 20:10:32] INFO     Audit logging configured:                          
+                             /Users/bensupriatma/Documents/PromptEng/FuturesAgen
+                             ticAIProject/src/logs/agent_log_20260505_201032.log
+                    INFO     Building web handler with audit log:               
+                             /Users/bensupriatma/Documents/PromptEng/FuturesAgen
+                             ticAIProject/src/logs/agent_log_20260505_201032.log
+[05/05/26 20:10:33] INFO     Live data hub started: provider=yfinance           
+                    INFO     Agent initialized: model=gpt-4o                    
+                             preserve_history=False                             
+                             log=/Users/bensupriatma/Documents/PromptEng/Futures
+                             AgenticAIProject/src/logs/agent_log_20260505_201032
+                             .log                                               
+                    INFO     Agent available:                                   
+                             log=/Users/bensupriatma/Documents/PromptEng/Futures
+                             AgenticAIProject/src/logs/agent_log_20260505_201032
+                             .log                                               
+                    INFO     Futures web app running at http://127.0.0.1:8000   
+[05/05/26 20:12:45] INFO     MVP analysis result: source=yfinance rows=240      
+                             setup_found=False direction=neutral confidence=0   
+                    INFO     Chat request: prompt=Do we have a setup right now? 
+                             setup_found=False direction=neutral confidence=0   
+                             source=yfinance                                    
+                    INFO     User input: Current FibAgent chart context:        
+                             - Default symbol/contract: NQ=F                    
+                             - Timeframe: 5 minutes                             
+                             - Data provider: yfinance                          
+                             - Current deterministic setup state:               
+                             {"setup_found": false, "direction": "neutral",     
+                             "entry_zone": null, "entry": null, "stop_loss":    
+                             null, "take_profit": null, "confidence_score": 0,  
+                             "reasoning": ["No valid setup found."]}            
+                             - Current market bias state: {"direction":         
+                             "neutral", "confidence_score": 0, "source":        
+                             "FibAgent MVP deterministic strategy"}             
+                             - If the user omits a symbol or contract, use the  
+                             default symbol/contract above.                     
+                             - If the user asks whether the market data is      
+                             bullish or bearish, and does not explicitly ask for
+                             a trade setup, use the current market bias state   
+                             for the answer.                                    
+                             - When answering setup questions, treat the        
+                             deterministic setup state as authoritative. Explain
+                             in plain English whether a valid setup exists and  
+                             whether entry, stop, and target are available. Do  
+                             not invent trade levels when setup_found is false. 
+                             - Return JSON only if the user explicitly asks for 
+                             JSON, structured output, schema output, or a       
+                             machine-readable response. If JSON is requested,   
+                             return exactly these keys: direction, entry, stop, 
+                             target, confidence_score. Do not wrap it in        
+                             markdown.                                          
+                             - For questions about latest price, OHLCV,         
+                             movement, trend, setup state, or dataset state, use
+                             the available tools or deterministic context       
+                             instead of asking the user to repeat the symbol.   
+                                                                                
+                             User question: Do we have a setup right now?       
+                    INFO     Agent loop iteration 1/6                           
+[05/05/26 20:12:47] INFO     HTTP Request: POST                                 
+                             https://api.openai.com/v1/chat/completions         
+                             "HTTP/1.1 200 OK"                                  
+                    INFO     Assistant intermediate response: Based on the      
+                             current deterministic setup state, no valid setup  
+                             has been found. The direction is neutral, and there
+                             are no entry, stop loss, or take profit levels     
+                             available. The confidence score is 0, indicating no
+                             strong evidence for a trade setup at this time.    
+                    INFO     Final response: Based on the current deterministic 
+                             setup state, no valid setup has been found. The    
+                             direction is neutral, and there are no entry, stop 
+                             loss, or take profit levels available. The         
+                             confidence score is 0, indicating no strong        
+                             evidence for a trade setup at this time.           
+                    INFO     Chat final response: Based on the current          
+                             deterministic setup state, no valid setup has been 
+                             found. The direction is neutral, and there are no  
+                             entry, stop loss, or take profit levels available. 
+                             The confidence score is 0, indicating no strong    
+                             evidence for a trade setup at this time.           
+[05/05/26 20:12:59] INFO     MVP analysis requested: source=yfinance            
+                             reward_multiple=2.0 stop_buffer=1.0                
+                    INFO     MVP analysis result: source=yfinance rows=240      
+                             setup_found=False direction=neutral confidence=0   
+[05/05/26 20:16:32] INFO     MVP analysis result: source=yfinance rows=240      
+                             setup_found=False direction=neutral confidence=0   
+                    INFO     Chat request: prompt=could you make me a poem?     
+                             setup_found=False direction=neutral confidence=0   
+                             source=yfinance                                    
+                    INFO     User input: Current FibAgent chart context:        
+                             - Default symbol/contract: NQ=F                    
+                             - Timeframe: 5 minutes                             
+                             - Data provider: yfinance                          
+                             - Current deterministic setup state:               
+                             {"setup_found": false, "direction": "neutral",     
+                             "entry_zone": null, "entry": null, "stop_loss":    
+                             null, "take_profit": null, "confidence_score": 0,  
+                             "reasoning": ["No valid setup found."]}            
+                             - Current market bias state: {"direction":         
+                             "neutral", "confidence_score": 0, "source":        
+                             "FibAgent MVP deterministic strategy"}             
+                             - If the user omits a symbol or contract, use the  
+                             default symbol/contract above.                     
+                             - If the user asks whether the market data is      
+                             bullish or bearish, and does not explicitly ask for
+                             a trade setup, use the current market bias state   
+                             for the answer.                                    
+                             - When answering setup questions, treat the        
+                             deterministic setup state as authoritative. Explain
+                             in plain English whether a valid setup exists and  
+                             whether entry, stop, and target are available. Do  
+                             not invent trade levels when setup_found is false. 
+                             - Return JSON only if the user explicitly asks for 
+                             JSON, structured output, schema output, or a       
+                             machine-readable response. If JSON is requested,   
+                             return exactly these keys: direction, entry, stop, 
+                             target, confidence_score. Do not wrap it in        
+                             markdown.                                          
+                             - For questions about latest price, OHLCV,         
+                             movement, trend, setup state, or dataset state, use
+                             the available tools or deterministic context       
+                             instead of asking the user to repeat the symbol.   
+                                                                                
+                             User question: could you make me a poem?           
+                    INFO     Agent loop iteration 1/6                           
+[05/05/26 20:16:33] INFO     HTTP Request: POST                                 
+                             https://api.openai.com/v1/chat/completions         
+                             "HTTP/1.1 200 OK"                                  
+                    INFO     Assistant intermediate response: I'm here to assist
+                             with futures market analysis and related queries.  
+                             If you have any questions about market data,       
+                             trends, or setups, feel free to ask!               
+                    INFO     Final response: I'm here to assist with futures    
+                             market analysis and related queries. If you have   
+                             any questions about market data, trends, or setups,
+                             feel free to ask!                                  
+                    INFO     Chat final response: I'm here to assist with       
+                             futures market analysis and related queries. If you
+                             have any questions about market data, trends, or   
+                             setups, feel free to ask!                          

@@ -1,9 +1,12 @@
 import json
+import logging
 from pathlib import Path
 
 try:
+    from .audit_logging import configure_logging, flush_transcript
     from .futures_tools import TOOLS_SCHEMA, FuturesToolbox
 except ImportError:
+    from audit_logging import configure_logging, flush_transcript
     from futures_tools import TOOLS_SCHEMA, FuturesToolbox
 
 
@@ -11,18 +14,21 @@ DEFAULT_MODEL = "gpt-4o"
 
 
 DEFAULT_POLICY_PATH = Path(__file__).with_name("futures_policy.txt")
+log = logging.getLogger("agent")
 
 
 class FuturesAgent:
     """Minimal tool-calling agent for grounded futures-market analysis."""
 
     def __init__(self, csv_path=None, policy_path=None, model_name=DEFAULT_MODEL, client=None, preserve_history=True):
+        self.active_log_path = configure_logging()
         self.client = client or self._build_client()
         self.model_name = model_name
         self.toolbox = FuturesToolbox(csv_path=csv_path)
         self.preserve_history = preserve_history
         self.system_policy = self._load_policy(policy_path or DEFAULT_POLICY_PATH)
         self.messages = [{"role": "system", "content": self.system_policy}]
+        log.info("Agent initialized: model=%s preserve_history=%s log=%s", self.model_name, self.preserve_history, self.active_log_path)
 
     @staticmethod
     def _build_client():
@@ -49,14 +55,25 @@ class FuturesAgent:
             raise ValueError(f"Policy file is empty: {path}")
         return policy
 
-    @staticmethod
-    def _parse_tool_args(tool_call):
+    def _parse_tool_args(self, tool_call):
         raw_args = tool_call.function.arguments or "{}"
         try:
             parsed = json.loads(raw_args)
         except json.JSONDecodeError:
+            log.warning(
+                "Malformed tool arguments: tool=%s raw_args=%s",
+                tool_call.function.name,
+                raw_args,
+            )
             return {}
-        return parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
+            log.warning(
+                "Malformed tool arguments: tool=%s parsed_non_object=%s",
+                tool_call.function.name,
+                parsed,
+            )
+            return {}
+        return parsed
 
     def _request_completion(self, messages):
         return self.client.chat.completions.create(
@@ -70,10 +87,13 @@ class FuturesAgent:
         messages = self.messages if self.preserve_history else [{"role": "system", "content": self.system_policy}]
         active_toolbox = toolbox or self.toolbox
         messages.append({"role": "user", "content": prompt})
+        log.info("User input: %s", prompt)
 
-        for _ in range(max_iterations):
+        for iteration in range(1, max_iterations + 1):
+            log.info("Agent loop iteration %s/%s", iteration, max_iterations)
             response = self._request_completion(messages)
             message = response.choices[0].message
+            log.info("Assistant intermediate response: %s", message.content or "")
 
             assistant_message = {
                 "role": "assistant",
@@ -96,11 +116,19 @@ class FuturesAgent:
             if not message.tool_calls:
                 if self.preserve_history:
                     self.messages = messages
+                log.info("Final response: %s", message.content or "")
+                flush_transcript()
                 return message.content
 
             for tool_call in message.tool_calls:
                 args = self._parse_tool_args(tool_call)
+                log.info(
+                    "Tool call: name=%s args=%s",
+                    tool_call.function.name,
+                    json.dumps(args, default=str),
+                )
                 tool_result = active_toolbox.execute(tool_call.function.name, args)
+                log.info("Tool result: name=%s result=%s", tool_call.function.name, tool_result)
                 messages.append(
                     {
                         "role": "tool",
@@ -111,6 +139,8 @@ class FuturesAgent:
 
         if self.preserve_history:
             self.messages = messages
+        log.warning("Loop termination: maximum tool iterations reached (%s)", max_iterations)
+        flush_transcript()
         return "The agent stopped after reaching the maximum tool-iteration limit."
 
 

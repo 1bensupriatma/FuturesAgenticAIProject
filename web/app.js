@@ -72,6 +72,10 @@ async function loadHealth() {
   const payload = await response.json();
   state.chatAvailable = payload.agent_available;
   setText("chatAvailability", payload.agent_available ? "Available" : "Unavailable");
+  setText(
+    "activeLogPath",
+    payload.active_log_path ? payload.active_log_path.split("/").pop() : "Unavailable",
+  );
   const metadata = payload.display_metadata || {};
   const symbol = metadata.symbol || "NQ=F";
   const timeframeLabel = metadata.timeframe || "5 minutes";
