@@ -148,9 +148,36 @@
             <span>Grounded Agent</span>
             <h2>Dataset Chat</h2>
           </div>
-          <button id="agentClose" class="icon-button" type="button" aria-label="Collapse chat agent">&times;</button>
+          <div class="agent-window-controls" aria-label="Chat window controls">
+            <button id="agentShrink" class="icon-button" type="button" aria-label="Make chat smaller">-</button>
+            <button id="agentGrow" class="icon-button" type="button" aria-label="Make chat larger">+</button>
+            <button id="agentClose" class="icon-button" type="button" aria-label="Collapse chat agent">&times;</button>
+          </div>
         </div>
         <div id="chatStatus" class="status-line muted">Ask about price movement, rollover, or contract snapshots.</div>
+        <div class="chat-agent-tools" aria-label="Agent chat tools">
+          <div class="suggestion-row" aria-label="Suggested prompts">
+            <select id="chatSuggestion" aria-label="Choose suggested prompt">
+              <option value="Do we have a setup right now?">Current setup?</option>
+              <option value="Why is there no trade right now?">Why no trade?</option>
+              <option value="Explain the confidence score.">Explain confidence</option>
+              <option value="Summarize the latest candle.">Latest candle</option>
+              <option value="Return JSON for the current setup.">Return JSON</option>
+            </select>
+            <button id="chatSuggestionAsk" class="utility-button" type="button">Ask</button>
+          </div>
+          <div class="chat-mode-row">
+            <label class="mode-option">
+              <input type="radio" name="chatMode" value="plain" checked />
+              <span>Plain English</span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="chatMode" value="json" />
+              <span>JSON</span>
+            </label>
+            <button id="chatReset" class="utility-button" type="button">Reset</button>
+          </div>
+        </div>
         <div id="chatTranscript" class="chat-transcript"></div>
         <form id="chatForm" class="chat-composer">
           <textarea id="chatPrompt" rows="4" placeholder="Ask about the latest move, trend, or dataset state."></textarea>

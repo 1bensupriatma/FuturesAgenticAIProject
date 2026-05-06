@@ -2,7 +2,12 @@ const state = {
   marketData: null,
   chatAvailable: false,
   agentExpanded: false,
+  agentSize: localStorage.getItem("fibagent.chatSize") || "standard",
+  chatLocked: false,
 };
+
+const agentSizes = ["compact", "standard", "expanded"];
+const chatCooldownMs = 1400;
 
 const money = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
@@ -37,7 +42,11 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function addChatMessage(role, text) {
+function basename(path) {
+  return path ? String(path).split("/").pop() : "";
+}
+
+function addChatMessage(role, text, metadata = {}) {
   const container = document.getElementById("chatTranscript");
   const wrapper = document.createElement("article");
   const stamp = document.createElement("time");
@@ -47,6 +56,37 @@ function addChatMessage(role, text) {
   stamp.textContent = role === "user" ? "You" : "Agent";
   body.textContent = text;
   wrapper.append(stamp, body);
+
+  if (metadata.sourceUsed || metadata.logPath || metadata.trace) {
+    const meta = document.createElement("div");
+    meta.className = "chat-message-meta";
+
+    if (metadata.sourceUsed && metadata.sourceUsed.length) {
+      const source = document.createElement("span");
+      source.textContent = `Source: ${metadata.sourceUsed.join(" + ")}`;
+      meta.append(source);
+    }
+
+    if (metadata.logPath) {
+      const log = document.createElement("span");
+      log.textContent = `Audit: ${basename(metadata.logPath)}`;
+      meta.append(log);
+    }
+
+    wrapper.append(meta);
+  }
+
+  if (metadata.trace) {
+    const details = document.createElement("details");
+    const summary = document.createElement("summary");
+    const pre = document.createElement("pre");
+    details.className = "tool-trace";
+    summary.textContent = "Tool trace";
+    pre.textContent = JSON.stringify(metadata.trace, null, 2);
+    details.append(summary, pre);
+    wrapper.append(details);
+  }
+
   container.append(wrapper);
   container.scrollTop = container.scrollHeight;
 }
@@ -67,6 +107,56 @@ function setAgentExpanded(expanded) {
   }
 }
 
+function setAgentSize(size) {
+  const widget = document.getElementById("agentWidget");
+  const shrink = document.getElementById("agentShrink");
+  const grow = document.getElementById("agentGrow");
+  const normalized = agentSizes.includes(size) ? size : "standard";
+  const index = agentSizes.indexOf(normalized);
+
+  state.agentSize = normalized;
+  localStorage.setItem("fibagent.chatSize", normalized);
+
+  if (widget) {
+    widget.classList.remove("is-compact", "is-standard", "is-expanded");
+    widget.classList.add(`is-${normalized}`);
+  }
+
+  if (shrink) {
+    shrink.disabled = index === 0;
+    shrink.setAttribute("aria-disabled", String(index === 0));
+  }
+
+  if (grow) {
+    grow.disabled = index === agentSizes.length - 1;
+    grow.setAttribute("aria-disabled", String(index === agentSizes.length - 1));
+  }
+}
+
+function adjustAgentSize(direction) {
+  const currentIndex = agentSizes.indexOf(state.agentSize);
+  const nextIndex = Math.max(0, Math.min(agentSizes.length - 1, currentIndex + direction));
+  setAgentSize(agentSizes[nextIndex]);
+  setAgentExpanded(true);
+}
+
+function setChatLocked(locked) {
+  const controls = [
+    document.getElementById("chatPrompt"),
+    document.querySelector("#chatForm button[type='submit']"),
+    document.getElementById("chatSuggestion"),
+    document.getElementById("chatSuggestionAsk"),
+  ];
+
+  state.chatLocked = locked;
+  controls.forEach((control) => {
+    if (control) {
+      control.disabled = locked;
+      control.setAttribute("aria-disabled", String(locked));
+    }
+  });
+}
+
 async function loadHealth() {
   const response = await fetch("/api/health");
   const payload = await response.json();
@@ -74,7 +164,7 @@ async function loadHealth() {
   setText("chatAvailability", payload.agent_available ? "Available" : "Unavailable");
   setText(
     "activeLogPath",
-    payload.active_log_path ? payload.active_log_path.split("/").pop() : "Unavailable",
+    payload.active_log_path ? basename(payload.active_log_path) : "Unavailable",
   );
   const metadata = payload.display_metadata || {};
   const symbol = metadata.symbol || "NQ=F";
@@ -143,8 +233,14 @@ async function runAnalysis() {
 async function sendChat(event) {
   event.preventDefault();
   setAgentExpanded(true);
+  if (state.chatLocked) {
+    setStatus("chatStatus", "Please wait for the current agent response.", "muted");
+    return;
+  }
+
   const textarea = document.getElementById("chatPrompt");
   const prompt = textarea.value.trim();
+  const mode = document.querySelector('input[name="chatMode"]:checked')?.value || "plain";
 
   if (!prompt) {
     return;
@@ -152,27 +248,74 @@ async function sendChat(event) {
 
   addChatMessage("user", prompt);
   textarea.value = "";
+  setChatLocked(true);
   setStatus("chatStatus", "Waiting for agent response...");
 
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt }),
-  });
-  const payload = await response.json();
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, response_mode: mode }),
+    });
+    const payload = await response.json();
 
-  if (!response.ok) {
-    addChatMessage("assistant", payload.error || "Agent request failed.");
-    setStatus("chatStatus", payload.details || payload.error || "Chat failed.", "error");
+    if (!response.ok) {
+      addChatMessage("assistant", payload.error || "Agent request failed.");
+      setStatus("chatStatus", payload.details || payload.error || "Chat failed.", "error");
+      return;
+    }
+
+    addChatMessage("assistant", payload.answer || "", {
+      sourceUsed: payload.source_used || [],
+      logPath: payload.active_log_path,
+      trace: payload.trace,
+    });
+    setText(
+      "activeLogPath",
+      payload.active_log_path ? basename(payload.active_log_path) : "Unavailable",
+    );
+    setStatus("chatStatus", "Response received.", "success");
+  } catch (error) {
+    addChatMessage("assistant", "Agent request failed.");
+    setStatus("chatStatus", error.message || "Chat failed.", "error");
+  } finally {
+    window.setTimeout(() => {
+      setChatLocked(false);
+    }, chatCooldownMs);
+  }
+}
+
+function submitPrompt(prompt) {
+  const textarea = document.getElementById("chatPrompt");
+  const chatForm = document.getElementById("chatForm");
+  textarea.value = prompt;
+  setAgentExpanded(true);
+  chatForm.requestSubmit();
+}
+
+function resetChat() {
+  if (state.chatLocked) {
+    setStatus("chatStatus", "Please wait for the current agent response.", "muted");
     return;
   }
 
-  addChatMessage("assistant", payload.answer || "");
-  setText(
-    "activeLogPath",
-    payload.active_log_path ? payload.active_log_path.split("/").pop() : "Unavailable",
-  );
-  setStatus("chatStatus", "Response received.", "success");
+  const transcript = document.getElementById("chatTranscript");
+  const textarea = document.getElementById("chatPrompt");
+  transcript.innerHTML = "";
+  textarea.value = "";
+  addChatMessage("assistant", "Chat reset. Ask about the current setup, latest candle, or request JSON.");
+  setStatus("chatStatus", "Chat reset.", "muted");
+  textarea.focus();
+}
+
+function askSelectedSuggestion() {
+  if (state.chatLocked) {
+    setStatus("chatStatus", "Please wait for the current agent response.", "muted");
+    return;
+  }
+
+  const select = document.getElementById("chatSuggestion");
+  submitPrompt(select.value);
 }
 
 function renderChart(rows) {
@@ -299,12 +442,33 @@ function renderChart(rows) {
 }
 
 async function bootstrap() {
+  setAgentSize(state.agentSize);
+
   document.getElementById("agentToggle").addEventListener("click", () => {
     setAgentExpanded(!state.agentExpanded);
   });
 
   document.getElementById("agentClose").addEventListener("click", () => {
     setAgentExpanded(false);
+  });
+
+  document.getElementById("agentShrink").addEventListener("click", () => {
+    adjustAgentSize(-1);
+  });
+
+  document.getElementById("agentGrow").addEventListener("click", () => {
+    adjustAgentSize(1);
+  });
+
+  document.getElementById("chatReset").addEventListener("click", resetChat);
+
+  document.getElementById("chatSuggestionAsk").addEventListener("click", askSelectedSuggestion);
+
+  document.getElementById("chatSuggestion").addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      askSelectedSuggestion();
+    }
   });
 
   document.addEventListener("keydown", (event) => {

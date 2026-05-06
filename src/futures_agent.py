@@ -28,6 +28,7 @@ class FuturesAgent:
         self.preserve_history = preserve_history
         self.system_policy = self._load_policy(policy_path or DEFAULT_POLICY_PATH)
         self.messages = [{"role": "system", "content": self.system_policy}]
+        self.last_trace = {}
         log.info("Agent initialized: model=%s preserve_history=%s log=%s", self.model_name, self.preserve_history, self.active_log_path)
 
     def start_new_session(self):
@@ -89,6 +90,13 @@ class FuturesAgent:
             tools=TOOLS_SCHEMA,
         )
 
+    @staticmethod
+    def _compact_tool_result(value, limit=900):
+        text = str(value)
+        if len(text) <= limit:
+            return text
+        return f"{text[:limit]}... [truncated]"
+
     def ask(self, prompt, max_iterations=6, toolbox=None, create_session_log=True):
         if create_session_log:
             self.start_new_session()
@@ -96,6 +104,12 @@ class FuturesAgent:
         messages = self.messages if self.preserve_history else [{"role": "system", "content": self.system_policy}]
         active_toolbox = toolbox or self.toolbox
         messages.append({"role": "user", "content": prompt})
+        self.last_trace = {
+            "log_path": str(self.active_log_path),
+            "iterations": [],
+            "tool_calls": [],
+            "termination": None,
+        }
         log.info("User input: %s", prompt)
 
         for iteration in range(1, max_iterations + 1):
@@ -103,6 +117,13 @@ class FuturesAgent:
             response = self._request_completion(messages)
             message = response.choices[0].message
             log.info("Assistant intermediate response: %s", message.content or "")
+            self.last_trace["iterations"].append(
+                {
+                    "iteration": iteration,
+                    "assistant_text": message.content or "",
+                    "tool_call_count": len(message.tool_calls or []),
+                }
+            )
 
             assistant_message = {
                 "role": "assistant",
@@ -138,6 +159,13 @@ class FuturesAgent:
                 )
                 tool_result = active_toolbox.execute(tool_call.function.name, args)
                 log.info("Tool result: name=%s result=%s", tool_call.function.name, tool_result)
+                self.last_trace["tool_calls"].append(
+                    {
+                        "name": tool_call.function.name,
+                        "arguments": args,
+                        "result": self._compact_tool_result(tool_result),
+                    }
+                )
                 messages.append(
                     {
                         "role": "tool",
@@ -149,6 +177,7 @@ class FuturesAgent:
         if self.preserve_history:
             self.messages = messages
         log.warning("Loop termination: maximum tool iterations reached (%s)", max_iterations)
+        self.last_trace["termination"] = f"Maximum tool iterations reached: {max_iterations}"
         flush_transcript()
         return "The agent stopped after reaching the maximum tool-iteration limit."
 

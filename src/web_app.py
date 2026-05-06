@@ -238,6 +238,10 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             log.warning("Guardrail event: empty chat prompt rejected")
             _json_response(self, {"error": "Prompt is required."}, status=HTTPStatus.BAD_REQUEST)
             return
+        response_mode = str(body.get("response_mode", "plain")).strip().lower()
+        if response_mode not in {"plain", "json"}:
+            log.warning("Malformed chat response mode: %s", response_mode)
+            response_mode = "plain"
 
         if self.agent_instance is None:
             log.warning("Guardrail event: chat unavailable: %s", self.agent_error)
@@ -284,6 +288,7 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 f"- Default symbol/contract: {symbol}\n"
                 f"- Timeframe: {timeframe}\n"
                 f"- Data provider: {mvp_payload['data_source']}\n"
+                f"- User selected response mode: {response_mode}\n"
                 f"- Current deterministic setup state: {json.dumps(setup_context, default=str)}\n"
                 f"- Current market bias state: {json.dumps(market_bias_context, default=str)}\n"
                 "- If the user omits a symbol or contract, use the default symbol/contract above.\n"
@@ -293,9 +298,9 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 "Explain in plain English whether a valid setup exists and whether entry, stop, and target "
                 "are available. Do not invent trade levels when setup_found is false.\n"
                 "- Return JSON only if the user explicitly asks for JSON, structured output, schema output, "
-                "or a machine-readable response. If JSON is requested, return exactly these keys: direction, "
-                "entry, stop, target, confidence_score. If setup_found is false, use direction \"neutral\" and "
-                "null for entry, stop, and target. Do not wrap it in markdown.\n"
+                "or a machine-readable response, or if the selected response mode is json. If JSON is requested, "
+                "return exactly these keys: direction, entry, stop, target, confidence_score. If setup_found is "
+                "false, use direction \"neutral\" and null for entry, stop, and target. Do not wrap it in markdown.\n"
                 "- For questions about latest price, OHLCV, movement, trend, setup state, or dataset state, "
                 "use the available tools or deterministic context instead of asking the user to repeat the symbol.\n\n"
                 f"User question: {prompt}"
@@ -312,7 +317,22 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
 
         log.info("Chat final response: %s", answer)
         flush_transcript()
-        _json_response(self, {"answer": answer, "active_log_path": str(session_log_path)})
+        trace = getattr(self.agent_instance, "last_trace", {})
+        source_used = [
+            "Deterministic FibAgent setup state",
+            str(data_source),
+        ]
+        if trace.get("tool_calls"):
+            source_used.append("Local agent tools")
+        _json_response(
+            self,
+            {
+                "answer": answer,
+                "active_log_path": str(session_log_path),
+                "source_used": source_used,
+                "trace": trace,
+            },
+        )
 
 
 def build_handler(data_path: str | Path | None = None):
