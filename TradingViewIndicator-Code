@@ -1,0 +1,1013 @@
+
+//@version=6
+strategy("Two-Bar Fib Retrace Strategy [Futures]", overlay=true,
+         max_labels_count=500, max_lines_count=500,
+         default_qty_type=strategy.fixed, default_qty_value=1,
+         initial_capital=100000, commission_type=strategy.commission.cash_per_contract,
+         commission_value=2.5, slippage=1)
+
+// ============================================================
+// INPUTS — Two-Bar Setup
+// ============================================================
+
+grp1 = "Two-Bar Setup"
+bodyPctMin = input.float(0.5,  "Min Body % of Range", minval=0.3, maxval=1.0, step=0.05, group=grp1)
+slOffset   = input.float(1.0,  "SL Offset Beyond Bar 2 Wick (points)", minval=0.25, step=0.25, group=grp1)
+showSL     = input.bool(true,  "Show SL Line", group=grp1)
+showZone   = input.bool(true,  "Show 50-61.8% Retrace Zone", group=grp1)
+
+grp2 = "VWAP Trend Filter"
+useVWAP  = input.bool(true, "Enable VWAP Trend Filter", group=grp2)
+showVWAP = input.bool(true, "Show VWAP Line", group=grp2)
+
+grp3 = "Volume"
+volMaLen = input.int(20, "Volume MA Length", group=grp3)
+atrLen   = input.int(14, "ATR Length", group=grp3)
+
+grp6 = "Display"
+showLabels    = input.bool(true, "Show Signal Labels",  group=grp6)
+showDashboard = input.bool(true, "Show Dashboard",      group=grp6)
+bullCol = input.color(color.new(#00e676, 0), "Bull Color", group=grp6)
+bearCol = input.color(color.new(#ff1744, 0), "Bear Color", group=grp6)
+
+// ============================================================
+// INPUTS — ICT Levels (TakingProphets style)
+// ============================================================
+
+var g_SETTINGS = "ICT Settings"
+lookbackSetting = input.string("1 Week", "Lookback Period",
+     options=["1 Day", "1 Week", "1 Month", "Max"], group=g_SETTINGS)
+tf_limit = input.timeframe("30", "Timeframe Limit",
+     tooltip="Drawings will not appear on timeframes >= this", group=g_SETTINGS)
+
+lookback_ms = switch lookbackSetting
+    "1 Day"   => 86400000
+    "1 Week"  => 604800000
+    "1 Month" => 2592000000
+    => 0
+inLookback = lookbackSetting == "Max" or (time >= (timenow - lookback_ms))
+
+var g_VISUALS = "ICT Visual Settings"
+level_line_color = input.color(color.black, "Level Line Color",  group=g_VISUALS)
+label_color      = input.color(color.black, "Label Color",       group=g_VISUALS)
+var int label_bg_transp = 100
+
+var g_LABELS = "ICT Label Settings"
+label_size_str   = input.string("Small", "Label Size",
+     options=["Tiny","Small","Normal","Large"], group=g_LABELS)
+show_ict_labels  = input.bool(true,  "Show Labels",                  group=g_LABELS)
+show_levels      = input.bool(true,  "Show Session High/Low Levels", group=g_LABELS)
+show_mitigated   = input.bool(false, "Show Mitigated Levels",        group=g_LABELS)
+combine_labels   = input.bool(true,  "Combine Overlapping Labels",   group=g_LABELS)
+
+label_size_setting = switch label_size_str
+    "Tiny"   => size.tiny
+    "Small"  => size.small
+    "Large"  => size.large
+    => size.normal
+
+var g_DAYOPEN = "True Day Open (6 PM)"
+show_dayopen  = input.bool(true,         "Show True Day Open Line", group=g_DAYOPEN)
+dayopen_color = input.color(color.black, "True Day Open Color",     group=g_DAYOPEN)
+
+var g_WEEKLEVELS = "Previous Week Levels"
+show_weeklevels   = input.bool(true,         "Show Prev Week High/Low",  group=g_WEEKLEVELS)
+weeklevels_color  = input.color(color.black, "Prev Week Color",          group=g_WEEKLEVELS)
+weeklevels_style_str = input.string("Dotted", "Prev Week Style",
+     options=["Solid","Dashed","Dotted"], group=g_WEEKLEVELS)
+weeklevels_style_lookup = switch weeklevels_style_str
+    "Solid"  => line.style_solid
+    "Dashed" => line.style_dashed
+    => line.style_dotted
+
+var g_DAYLEVELS = "Previous Day Levels"
+show_pdlevels    = input.bool(true,          "Show Previous Day H/L",   group=g_DAYLEVELS)
+show_wed_levels  = input.bool(false,         "Show Wednesday Levels",   group=g_DAYLEVELS)
+show_tue_levels  = input.bool(false,         "Show Tuesday Levels",     group=g_DAYLEVELS)
+show_mon_levels  = input.bool(false,         "Show Monday Levels",      group=g_DAYLEVELS)
+daylevels_color  = input.color(color.black,  "Day Levels Color",        group=g_DAYLEVELS)
+daylevels_style_str = input.string("Dotted", "Day Levels Style",
+     options=["Solid","Dashed","Dotted"], group=g_DAYLEVELS)
+daylevels_style_lookup = switch daylevels_style_str
+    "Solid"  => line.style_solid
+    "Dashed" => line.style_dashed
+    => line.style_dotted
+
+var g_SESSIONS = "Session Levels"
+use_asia   = input.bool(true, "Asia (8pm-12am ET)",          group=g_SESSIONS)
+use_london = input.bool(true, "London (2am-5am ET)",         group=g_SESSIONS)
+use_nyam   = input.bool(true, "NY AM (8:30am-11:30am ET)",   group=g_SESSIONS)
+use_nylu   = input.bool(true, "NY Lunch (12pm-1pm ET)",      group=g_SESSIONS)
+use_nypm   = input.bool(true, "NY PM (1:30pm-6pm ET)",       group=g_SESSIONS)
+
+asia_high_text  = "ASIA.H"
+asia_low_text   = "ASIA.L"
+london_high_text = "LON.H"
+london_low_text  = "LON.L"
+nyam_high_text  = "NYAM.H"
+nyam_low_text   = "NYAM.L"
+nylu_high_text  = "NYLU.H"
+nylu_low_text   = "NYLU.L"
+nypm_high_text  = "NYPM.H"
+nypm_low_text   = "NYPM.L"
+
+gmt_tz = "America/New_York"
+
+// ============================================================
+// BASE CALCULATIONS
+// ============================================================
+
+atr   = ta.atr(atrLen)
+volMA = ta.sma(volume, volMaLen)
+vwap  = ta.vwap(hlc3)
+
+aboveVWAP = close > vwap
+belowVWAP = close < vwap
+trendBull = useVWAP ? aboveVWAP : true
+trendBear = useVWAP ? belowVWAP : true
+
+// ============================================================
+// BAR DEFINITIONS
+// ============================================================
+
+b1o       = open[2]
+b1c       = close[2]
+b1h       = high[2]
+b1l       = low[2]
+b1range   = b1h - b1l
+b1body    = math.abs(b1c - b1o)
+b1bodyPct = b1range != 0 ? b1body / b1range : 0.0
+b1bull    = b1c > b1o
+b1bear    = b1c < b1o
+b1full    = b1bodyPct >= bodyPctMin
+
+b2o       = open[1]
+b2c       = close[1]
+b2h       = high[1]
+b2l       = low[1]
+b2range   = b2h - b2l
+b2body    = math.abs(b2c - b2o)
+b2bodyPct = b2range != 0 ? b2body / b2range : 0.0
+b2bull    = b2c > b2o
+b2bear    = b2c < b2o
+b2full    = b2bodyPct >= bodyPctMin
+
+volConfirm = volume[1] > volume[2]
+
+// ============================================================
+// IMPULSE DETECTION
+// ============================================================
+
+impulseBullSame  = b1bull and b2bull and b1full and b2full and volConfirm
+impulseBearSame  = b1bear and b2bear and b1full and b2full and volConfirm
+impulseBullMixed = (not (b1bull and b2bull)) and b2c > b1h and b1full and b2full and volConfirm
+impulseBearMixed = (not (b1bear and b2bear)) and b2c < b1l and b1full and b2full and volConfirm
+
+impulseBull = (impulseBullSame or impulseBullMixed) and trendBull
+impulseBear = (impulseBearSame or impulseBearMixed) and trendBear
+
+// ============================================================
+// RETRACE ZONE
+// ============================================================
+
+bull_zone_top = b2h - (b2range * 0.500)
+bull_zone_bot = b2h - (b2range * 0.618)
+bear_zone_top = b2l + (b2range * 0.618)
+bear_zone_bot = b2l + (b2range * 0.500)
+
+bullWickInZone = low  <= bull_zone_top and low  >= bull_zone_bot
+bearWickInZone = high >= bear_zone_bot and high <= bear_zone_top
+
+bullSignal = impulseBull and bullWickInZone
+bearSignal = impulseBear and bearWickInZone
+
+sl_bull = b2l - slOffset
+sl_bear = b2h + slOffset
+
+// ============================================================
+// STRATEGY ENTRIES & EXITS
+// ============================================================
+
+if bullSignal
+    strategy.entry("Long",  strategy.long,  qty=1)
+    strategy.exit("L-SL",   from_entry="Long",  stop=sl_bull)
+
+if bearSignal
+    strategy.entry("Short", strategy.short, qty=1)
+    strategy.exit("S-SL",   from_entry="Short", stop=sl_bear)
+
+// ============================================================
+// RETRACE ZONE BOX
+// ============================================================
+
+if showZone and impulseBull and not impulseBull[1]
+    box.new(bar_index - 1, bull_zone_top, bar_index + 8, bull_zone_bot,
+         border_color=color.new(bullCol, 20), bgcolor=color.new(bullCol, 85),
+         text="50-61.8%", text_color=bullCol, text_size=size.tiny)
+
+if showZone and impulseBear and not impulseBear[1]
+    box.new(bar_index - 1, bear_zone_top, bar_index + 8, bear_zone_bot,
+         border_color=color.new(bearCol, 20), bgcolor=color.new(bearCol, 85),
+         text="50-61.8%", text_color=bearCol, text_size=size.tiny)
+
+// ============================================================
+// SL LINE
+// ============================================================
+
+if bullSignal and showSL
+    line.new(bar_index, sl_bull, bar_index + 10, sl_bull,
+         color=color.new(bearCol, 20), width=2, style=line.style_dashed)
+
+if bearSignal and showSL
+    line.new(bar_index, sl_bear, bar_index + 10, sl_bear,
+         color=color.new(bullCol, 20), width=2, style=line.style_dashed)
+
+// ============================================================
+// SIGNAL LABELS
+// ============================================================
+
+impulseType = impulseBullSame or impulseBearSame ? " [Match]" : " [Mixed]"
+
+if bullSignal and showLabels
+    label.new(bar_index, low - atr * 0.4,
+         "▲ LONG" + impulseType +
+         "\nSL: "   + str.tostring(math.round(sl_bull, 2)) +
+         "\nVWAP: " + str.tostring(math.round(vwap, 2)),
+         style=label.style_label_up,
+         color=color.new(bullCol, 10),
+         textcolor=color.white, size=size.small)
+
+if bearSignal and showLabels
+    label.new(bar_index, high + atr * 0.4,
+         "▼ SHORT" + impulseType +
+         "\nSL: "   + str.tostring(math.round(sl_bear, 2)) +
+         "\nVWAP: " + str.tostring(math.round(vwap, 2)),
+         style=label.style_label_down,
+         color=color.new(bearCol, 10),
+         textcolor=color.white, size=size.small)
+
+barcolor(bullSignal ? bullCol : bearSignal ? bearCol : na)
+
+// ============================================================
+// VWAP
+// ============================================================
+
+plot(showVWAP ? vwap : na, "VWAP", color=color.new(color.aqua, 0), linewidth=2)
+
+// ============================================================
+// ICT LEVEL ARRAYS
+// ============================================================
+
+var line[]   high_lines          = array.new_line()
+var line[]   low_lines           = array.new_line()
+var float[]  high_levels         = array.new_float()
+var float[]  low_levels          = array.new_float()
+var label[]  high_labels         = array.new_label()
+var label[]  low_labels          = array.new_label()
+var string[] high_texts          = array.new_string()
+var string[] low_texts           = array.new_string()
+var label[]  mitigated_hi_labels = array.new_label()
+var label[]  mitigated_lo_labels = array.new_label()
+var label[]  combined_labels_arr = array.new_label()
+var int[]    used_label_x        = array.new_int()
+var float[]  used_label_y        = array.new_float()
+
+// ── lvl_group type for combining overlapping labels ──────────
+type lvl_group
+    float  level
+    string txt
+    int    x
+var array<lvl_group> _groups = array.new<lvl_group>()
+
+add_group(float price, string token, int xloc_idx) =>
+    int tick_idx = int(math.round(price / syminfo.mintick))
+    int found = -1
+    if array.size(_groups) > 0
+        for gi = 0 to array.size(_groups) - 1
+            g = array.get(_groups, gi)
+            if int(math.round(g.level / syminfo.mintick)) == tick_idx
+                found := gi
+                break
+    if found >= 0
+        g = array.get(_groups, found)
+        bool has = g.txt == token or str.contains(g.txt, token + " +") or str.contains(g.txt, "+ " + token)
+        g.txt := has ? g.txt : g.txt + " + " + token
+        g.x   := math.min(g.x, xloc_idx)
+        array.set(_groups, found, g)
+    else
+        array.push(_groups, lvl_group.new(tick_idx * syminfo.mintick, token, xloc_idx))
+
+// ============================================================
+// SESSION LEVEL DRAW + UPDATE FUNCTIONS
+// ============================================================
+
+drawSessionLevels(float level_price, int level_idx, string level_text, bool is_high) =>
+    if not na(level_price) and not na(level_idx)
+        int dx        = math.max(0, bar_index - level_idx)
+        int dx_c      = math.min(dx, 10000)
+        int x1_time   = na(time[dx_c]) ? time : time[dx_c]
+        line_id = line.new(x1_time, level_price, time, level_price,
+             xloc=xloc.bar_time, color=level_line_color, style=line.style_solid)
+        label_id = label.new(x1_time, level_price, level_text,
+             xloc=xloc.bar_time,
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color,
+             style=is_high ? label.style_label_down : label.style_label_up,
+             size=label_size_setting)
+        if is_high
+            array.push(high_lines,  line_id)
+            array.push(high_levels, level_price)
+            array.push(high_labels, label_id)
+            array.push(high_texts,  level_text)
+        else
+            array.push(low_lines,  line_id)
+            array.push(low_levels, level_price)
+            array.push(low_labels, label_id)
+            array.push(low_texts,  level_text)
+
+updateLines() =>
+    bool enforce   = lookbackSetting != "Max"
+    int  cutoff    = timenow - lookback_ms
+
+    // High lines
+    if array.size(high_lines) > 0
+        for i = array.size(high_lines) - 1 to 0
+            ln    = array.get(high_lines,  i)
+            level = array.get(high_levels, i)
+            lbl   = array.size(high_labels) > i ? array.get(high_labels, i) : na
+            txt   = array.size(high_texts)  > i ? array.get(high_texts,  i) : "LEVEL"
+
+            if enforce and line.get_x1(ln) < cutoff
+                line.delete(ln)
+                if not na(lbl)
+                    label.delete(lbl)
+                array.remove(high_lines,  i)
+                array.remove(high_levels, i)
+                if array.size(high_labels) > i
+                    array.remove(high_labels, i)
+                if array.size(high_texts) > i
+                    array.remove(high_texts, i)
+            else if high > level
+                if not show_mitigated
+                    line.delete(ln)
+                    if not na(lbl)
+                        label.delete(lbl)
+                    array.remove(high_lines,  i)
+                    array.remove(high_levels, i)
+                    if array.size(high_labels) > i
+                        array.remove(high_labels, i)
+                    if array.size(high_texts) > i
+                        array.remove(high_texts, i)
+                else
+                    line.set_x2(ln, bar_index)
+                    int x1t  = line.get_x1(ln)
+                    int dxm  = math.min(math.max(0, bar_index - x1t), 10000)
+                    int xtm  = na(time[dxm]) ? time : time[dxm]
+                    if not na(lbl)
+                        label.delete(lbl)
+                    new_lbl = label.new(xtm, level, txt,
+                         xloc=xloc.bar_time, color=color.new(color.black, label_bg_transp),
+                         textcolor=label_color, style=label.style_label_right,
+                         size=label_size_setting)
+                    array.push(mitigated_hi_labels, new_lbl)
+                    array.remove(high_lines,  i)
+                    array.remove(high_levels, i)
+                    if array.size(high_labels) > i
+                        array.remove(high_labels, i)
+                    if array.size(high_texts) > i
+                        array.remove(high_texts, i)
+            else
+                line.set_x2(ln, time)
+                if not combine_labels and not na(lbl)
+                    label.set_x(lbl, time)
+                    label.set_y(lbl, level)
+                    label.set_style(lbl, label.style_label_left)
+
+// Low lines
+    if array.size(low_lines) > 0
+        for i = array.size(low_lines) - 1 to 0
+            ln    = array.get(low_lines,  i)
+            level = array.get(low_levels, i)
+            lbl   = array.size(low_labels) > i ? array.get(low_labels, i) : na
+            txt   = array.size(low_texts)  > i ? array.get(low_texts,  i) : "LEVEL"
+
+            if enforce and line.get_x1(ln) < cutoff
+                line.delete(ln)
+                if not na(lbl)
+                    label.delete(lbl)
+                array.remove(low_lines,  i)
+                array.remove(low_levels, i)
+                if array.size(low_labels) > i
+                    array.remove(low_labels, i)
+                if array.size(low_texts) > i
+                    array.remove(low_texts, i)
+                label(na)
+            else if low < level
+                if not show_mitigated
+                    line.delete(ln)
+                    if not na(lbl)
+                        label.delete(lbl)
+                    array.remove(low_lines,  i)
+                    array.remove(low_levels, i)
+                    if array.size(low_labels) > i
+                        array.remove(low_labels, i)
+                    if array.size(low_texts) > i
+                        array.remove(low_texts, i)
+                    label(na)
+                else
+                    line.set_x2(ln, bar_index)
+                    int x1t  = line.get_x1(ln)
+                    int dxm  = math.min(math.max(0, bar_index - x1t), 10000)
+                    int xtm  = na(time[dxm]) ? time : time[dxm]
+                    if not na(lbl)
+                        label.delete(lbl)
+                    new_lbl = label.new(xtm, level, txt,
+                         xloc=xloc.bar_time, color=color.new(color.black, label_bg_transp),
+                         textcolor=label_color, style=label.style_label_right,
+                         size=label_size_setting)
+                    array.push(mitigated_lo_labels, new_lbl)
+                    array.remove(low_lines,  i)
+                    array.remove(low_levels, i)
+                    if array.size(low_labels) > i
+                        array.remove(low_labels, i)
+                    if array.size(low_texts) > i
+                        array.remove(low_texts, i)
+                    label(na)
+            else
+                line.set_x2(ln, time)
+                if not combine_labels and not na(lbl)
+                    label.set_x(lbl, time)
+                    label.set_y(lbl, level)
+                    label.set_style(lbl, label.style_label_left)
+                label(na)
+// ============================================================
+// SESSION HIGH / LOW TRACKING
+// ============================================================
+
+updateSessionLevels(float curr_high, float curr_low, int curr_hi_idx, int curr_lo_idx, bool in_session) =>
+    float new_high    = curr_high
+    float new_low     = curr_low
+    int   new_hi_idx  = curr_hi_idx
+    int   new_lo_idx  = curr_lo_idx
+    if in_session
+        if na(curr_high) or high > curr_high
+            new_high   := high
+            new_hi_idx := bar_index
+        if na(curr_low) or low < curr_low
+            new_low    := low
+            new_lo_idx := bar_index
+    [new_high, new_low, new_hi_idx, new_lo_idx]
+
+var float asia_high    = na
+var float asia_low     = na
+var int   asia_hi_idx  = na
+var int   asia_lo_idx  = na
+
+var float lon_high     = na
+var float lon_low      = na
+var int   lon_hi_idx   = na
+var int   lon_lo_idx   = na
+
+var float nyam_high    = na
+var float nyam_low     = na
+var int   nyam_hi_idx  = na
+var int   nyam_lo_idx  = na
+
+var float nylu_high    = na
+var float nylu_low     = na
+var int   nylu_hi_idx  = na
+var int   nylu_lo_idx  = na
+
+var float nypm_high    = na
+var float nypm_low     = na
+var int   nypm_hi_idx  = na
+var int   nypm_lo_idx  = na
+
+// ============================================================
+// TRUE DAY OPEN (6 PM)
+// ============================================================
+
+var float dayopen_price     = na
+var line  dayopen_line      = na
+var label dayopen_label_obj = na
+
+is_dayopen = hour(time, gmt_tz) == 18 and minute(time, gmt_tz) == 0
+
+if is_dayopen
+    dayopen_price := open
+    if not na(dayopen_line)
+        line.delete(dayopen_line)
+    if not na(dayopen_label_obj)
+        label.delete(dayopen_label_obj)
+    if show_dayopen and timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+        dayopen_line := line.new(bar_index, dayopen_price, bar_index + 1, dayopen_price,
+             color=dayopen_color, style=line.style_dotted)
+
+if not na(dayopen_line) and not na(dayopen_price)
+    line.set_x2(dayopen_line, bar_index)
+    if not na(dayopen_label_obj)
+        label.delete(dayopen_label_obj)
+    if not combine_labels
+        dayopen_label_obj := label.new(bar_index, dayopen_price, "True Day Open",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+// ============================================================
+// PREVIOUS WEEK LEVELS
+// ============================================================
+
+[prev_week_high, prev_week_low] = request.security(syminfo.tickerid, "W",
+     [high, low], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+var float week_high       = na
+var float week_low        = na
+var line  week_hi_line    = na
+var line  week_lo_line    = na
+var label week_hi_label   = na
+var label week_lo_label   = na
+
+is_newweek = dayofweek == dayofweek.monday and
+     hour(time, gmt_tz) == 0 and minute(time, gmt_tz) == 0
+
+if is_newweek
+    week_high := prev_week_high
+    week_low  := prev_week_low
+    if not na(week_hi_line)
+        line.delete(week_hi_line)
+    if not na(week_lo_line)
+        line.delete(week_lo_line)
+    if not na(week_hi_label)
+        label.delete(week_hi_label)
+    if not na(week_lo_label)
+        label.delete(week_lo_label)
+    if inLookback and show_weeklevels and timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+        week_hi_line := line.new(bar_index, week_high, bar_index + 1, week_high,
+             color=weeklevels_color, style=weeklevels_style_lookup)
+        week_lo_line := line.new(bar_index, week_low,  bar_index + 1, week_low,
+             color=weeklevels_color, style=weeklevels_style_lookup)
+
+if inLookback and not na(week_hi_line)
+    line.set_x2(week_hi_line, bar_index)
+    if not na(week_hi_label)
+        label.delete(week_hi_label)
+    if not combine_labels
+        week_hi_label := label.new(bar_index, week_high, "PWH",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+if inLookback and not na(week_lo_line)
+    line.set_x2(week_lo_line, bar_index)
+    if not na(week_lo_label)
+        label.delete(week_lo_label)
+    if not combine_labels
+        week_lo_label := label.new(bar_index, week_low, "PWL",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+// ============================================================
+// PREVIOUS DAY + WED/TUE/MON LEVELS
+// ============================================================
+
+[d1h, d1l, d2h, d2l, d3h, d3l, d4h, d4l] = request.security(syminfo.tickerid, "D",
+     [high, low, high[1], low[1], high[2], low[2], high[3], low[3]],
+     gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_off)
+
+var float pd_high = na
+var float pd_low  = na
+var float wed_high = na
+var float wed_low  = na
+var float tue_high = na
+var float tue_low  = na
+var float mon_high = na
+var float mon_low  = na
+
+var line  pd_hi_line  = na
+var line  pd_lo_line  = na
+var line  wed_hi_line = na
+var line  wed_lo_line = na
+var line  tue_hi_line = na
+var line  tue_lo_line = na
+var line  mon_hi_line = na
+var line  mon_lo_line = na
+
+var label pd_hi_label  = na
+var label pd_lo_label  = na
+var label wed_hi_label = na
+var label wed_lo_label = na
+var label tue_hi_label = na
+var label tue_lo_label = na
+var label mon_hi_label = na
+var label mon_lo_label = na
+
+is_newday = hour(time, gmt_tz) == 0 and minute(time, gmt_tz) == 0
+
+if is_newday
+    pd_high  := d1h
+    pd_low   := d1l
+    wed_high := d2h
+    wed_low  := d2l
+    tue_high := d3h
+    tue_low  := d3l
+    mon_high := d4h
+    mon_low  := d4l
+
+    if not na(pd_hi_line)
+        line.delete(pd_hi_line)
+        line.delete(pd_lo_line)
+        label.delete(pd_hi_label)
+        label.delete(pd_lo_label)
+    if not na(wed_hi_line)
+        line.delete(wed_hi_line)
+        line.delete(wed_lo_line)
+        label.delete(wed_hi_label)
+        label.delete(wed_lo_label)
+    if not na(tue_hi_line)
+        line.delete(tue_hi_line)
+        line.delete(tue_lo_line)
+        label.delete(tue_hi_label)
+        label.delete(tue_lo_label)
+    if not na(mon_hi_line)
+        line.delete(mon_hi_line)
+        line.delete(mon_lo_line)
+        label.delete(mon_hi_label)
+        label.delete(mon_lo_label)
+
+    if inLookback and timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+        if show_pdlevels
+            pd_hi_line := line.new(bar_index, pd_high, bar_index + 1, pd_high,
+                 color=daylevels_color, style=daylevels_style_lookup)
+            pd_lo_line := line.new(bar_index, pd_low,  bar_index + 1, pd_low,
+                 color=daylevels_color, style=daylevels_style_lookup)
+        if show_wed_levels
+            wed_hi_line := line.new(bar_index, wed_high, bar_index + 1, wed_high,
+                 color=daylevels_color, style=daylevels_style_lookup)
+            wed_lo_line := line.new(bar_index, wed_low,  bar_index + 1, wed_low,
+                 color=daylevels_color, style=daylevels_style_lookup)
+        if show_tue_levels
+            tue_hi_line := line.new(bar_index, tue_high, bar_index + 1, tue_high,
+                 color=daylevels_color, style=daylevels_style_lookup)
+            tue_lo_line := line.new(bar_index, tue_low,  bar_index + 1, tue_low,
+                 color=daylevels_color, style=daylevels_style_lookup)
+        if show_mon_levels
+            mon_hi_line := line.new(bar_index, mon_high, bar_index + 1, mon_high,
+                 color=daylevels_color, style=daylevels_style_lookup)
+            mon_lo_line := line.new(bar_index, mon_low,  bar_index + 1, mon_low,
+                 color=daylevels_color, style=daylevels_style_lookup)
+
+if inLookback and not na(pd_hi_line)
+    line.set_x2(pd_hi_line, bar_index)
+    line.set_x2(pd_lo_line, bar_index)
+    if not na(pd_hi_label)
+        label.delete(pd_hi_label)
+    if not na(pd_lo_label)
+        label.delete(pd_lo_label)
+    if not combine_labels
+        pd_hi_label := label.new(bar_index, pd_high, "PDH",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+        pd_lo_label := label.new(bar_index, pd_low, "PDL",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+if inLookback and not na(wed_hi_line)
+    line.set_x2(wed_hi_line, bar_index)
+    line.set_x2(wed_lo_line, bar_index)
+    if not na(wed_hi_label)
+        label.delete(wed_hi_label)
+    if not na(wed_lo_label)
+        label.delete(wed_lo_label)
+    if not combine_labels
+        wed_hi_label := label.new(bar_index, wed_high, "WED.H",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+        wed_lo_label := label.new(bar_index, wed_low, "WED.L",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+if inLookback and not na(tue_hi_line)
+    line.set_x2(tue_hi_line, bar_index)
+    line.set_x2(tue_lo_line, bar_index)
+    if not na(tue_hi_label)
+        label.delete(tue_hi_label)
+    if not na(tue_lo_label)
+        label.delete(tue_lo_label)
+    if not combine_labels
+        tue_hi_label := label.new(bar_index, tue_high, "TUE.H",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+        tue_lo_label := label.new(bar_index, tue_low, "TUE.L",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+if inLookback and not na(mon_hi_line)
+    line.set_x2(mon_hi_line, bar_index)
+    line.set_x2(mon_lo_line, bar_index)
+    if not na(mon_hi_label)
+        label.delete(mon_hi_label)
+    if not na(mon_lo_label)
+        label.delete(mon_lo_label)
+    if not combine_labels
+        mon_hi_label := label.new(bar_index, mon_high, "MON.H",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+        mon_lo_label := label.new(bar_index, mon_low, "MON.L",
+             color=color.new(color.black, label_bg_transp),
+             textcolor=label_color, style=label.style_label_left,
+             size=label_size_setting, xloc=xloc.bar_index)
+
+// ============================================================
+// SESSION PROCESSING
+// ============================================================
+
+if timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+
+    // ── ASIA ─────────────────────────────────────────────────
+    if use_asia
+        asia_sess  = time(timeframe.period, "2000-0000", gmt_tz)
+        in_asia    = not na(asia_sess)
+        [nh, nl, nhi, nli] = updateSessionLevels(asia_high, asia_low, asia_hi_idx, asia_lo_idx, in_asia)
+        asia_high   := nh
+        asia_low    := nl
+        asia_hi_idx := nhi
+        asia_lo_idx := nli
+        if inLookback and na(asia_sess) and not na(asia_sess[1]) and show_levels
+            drawSessionLevels(asia_high, asia_hi_idx, asia_high_text, true)
+            drawSessionLevels(asia_low,  asia_lo_idx, asia_low_text,  false)
+            asia_high   := na
+            asia_low    := na
+            asia_hi_idx := na
+            asia_lo_idx := na
+
+    // ── LONDON ───────────────────────────────────────────────
+    if use_london
+        lon_sess   = time(timeframe.period, "0200-0500", gmt_tz)
+        in_london  = not na(lon_sess)
+        [nh, nl, nhi, nli] = updateSessionLevels(lon_high, lon_low, lon_hi_idx, lon_lo_idx, in_london)
+        lon_high   := nh
+        lon_low    := nl
+        lon_hi_idx := nhi
+        lon_lo_idx := nli
+        if inLookback and na(lon_sess) and not na(lon_sess[1]) and show_levels
+            drawSessionLevels(lon_high, lon_hi_idx, london_high_text, true)
+            drawSessionLevels(lon_low,  lon_lo_idx, london_low_text,  false)
+            lon_high   := na
+            lon_low    := na
+            lon_hi_idx := na
+            lon_lo_idx := na
+
+    // ── NY AM ─────────────────────────────────────────────────
+    if use_nyam
+        nyam_sess  = time(timeframe.period, "0830-1130", gmt_tz)
+        in_nyam    = not na(nyam_sess)
+        [nh, nl, nhi, nli] = updateSessionLevels(nyam_high, nyam_low, nyam_hi_idx, nyam_lo_idx, in_nyam)
+        nyam_high   := nh
+        nyam_low    := nl
+        nyam_hi_idx := nhi
+        nyam_lo_idx := nli
+        if inLookback and na(nyam_sess) and not na(nyam_sess[1]) and show_levels
+            drawSessionLevels(nyam_high, nyam_hi_idx, nyam_high_text, true)
+            drawSessionLevels(nyam_low,  nyam_lo_idx, nyam_low_text,  false)
+            nyam_high   := na
+            nyam_low    := na
+            nyam_hi_idx := na
+            nyam_lo_idx := na
+
+    // ── NY LUNCH ─────────────────────────────────────────────
+    if use_nylu
+        nylu_sess  = time(timeframe.period, "1200-1300", gmt_tz)
+        in_nylu    = not na(nylu_sess)
+        [nh, nl, nhi, nli] = updateSessionLevels(nylu_high, nylu_low, nylu_hi_idx, nylu_lo_idx, in_nylu)
+        nylu_high   := nh
+        nylu_low    := nl
+        nylu_hi_idx := nhi
+        nylu_lo_idx := nli
+        if inLookback and na(nylu_sess) and not na(nylu_sess[1]) and show_levels
+            drawSessionLevels(nylu_high, nylu_hi_idx, nylu_high_text, true)
+            drawSessionLevels(nylu_low,  nylu_lo_idx, nylu_low_text,  false)
+            nylu_high   := na
+            nylu_low    := na
+            nylu_hi_idx := na
+            nylu_lo_idx := na
+
+    // ── NY PM ─────────────────────────────────────────────────
+    if use_nypm
+        nypm_sess  = time(timeframe.period, "1330-1800", gmt_tz)
+        in_nypm    = not na(nypm_sess)
+        [nh, nl, nhi, nli] = updateSessionLevels(nypm_high, nypm_low, nypm_hi_idx, nypm_lo_idx, in_nypm)
+        nypm_high   := nh
+        nypm_low    := nl
+        nypm_hi_idx := nhi
+        nypm_lo_idx := nli
+        if inLookback and na(nypm_sess) and not na(nypm_sess[1]) and show_levels
+            drawSessionLevels(nypm_high, nypm_hi_idx, nypm_high_text, true)
+            drawSessionLevels(nypm_low,  nypm_lo_idx, nypm_low_text,  false)
+            nypm_high   := na
+            nypm_low    := na
+            nypm_hi_idx := na
+            nypm_lo_idx := na
+
+    updateLines()
+
+// ============================================================
+// COMBINED OVERLAPPING LABELS
+// ============================================================
+
+if show_ict_labels and combine_labels and
+     timeframe.in_seconds("") <= timeframe.in_seconds(tf_limit)
+
+    if array.size(high_labels) > 0
+        for lb in high_labels
+            label.delete(lb)
+        array.clear(high_labels)
+    if array.size(low_labels) > 0
+        for lb in low_labels
+            label.delete(lb)
+        array.clear(low_labels)
+
+    if not na(week_hi_label)
+        label.delete(week_hi_label)
+        week_hi_label := na
+    if not na(week_lo_label)
+        label.delete(week_lo_label)
+        week_lo_label := na
+    if not na(pd_hi_label)
+        label.delete(pd_hi_label)
+        pd_hi_label := na
+    if not na(pd_lo_label)
+        label.delete(pd_lo_label)
+        pd_lo_label := na
+    if not na(wed_hi_label)
+        label.delete(wed_hi_label)
+        wed_hi_label := na
+    if not na(wed_lo_label)
+        label.delete(wed_lo_label)
+        wed_lo_label := na
+    if not na(tue_hi_label)
+        label.delete(tue_hi_label)
+        tue_hi_label := na
+    if not na(tue_lo_label)
+        label.delete(tue_lo_label)
+        tue_lo_label := na
+    if not na(mon_hi_label)
+        label.delete(mon_hi_label)
+        mon_hi_label := na
+    if not na(mon_lo_label)
+        label.delete(mon_lo_label)
+        mon_lo_label := na
+    if not na(dayopen_label_obj)
+        label.delete(dayopen_label_obj)
+        dayopen_label_obj := na
+
+    if array.size(combined_labels_arr) > 0
+        for cl in combined_labels_arr
+            label.delete(cl)
+        array.clear(combined_labels_arr)
+    array.clear(used_label_x)
+    array.clear(used_label_y)
+    array.clear(_groups)
+
+    if array.size(high_lines) > 0
+        for i = 0 to array.size(high_lines) - 1
+            ln    = array.get(high_lines, i)
+            price = line.get_y1(ln)
+            token = array.size(high_texts) > i ? array.get(high_texts, i) : "HIGH"
+            add_group(price, token, bar_index)
+    if array.size(low_lines) > 0
+        for i = 0 to array.size(low_lines) - 1
+            ln    = array.get(low_lines, i)
+            price = line.get_y1(ln)
+            token = array.size(low_texts) > i ? array.get(low_texts, i) : "LOW"
+            add_group(price, token, bar_index)
+
+    if show_weeklevels
+        if not na(week_hi_line) and not na(week_high)
+            add_group(week_high, "PWH", bar_index)
+        if not na(week_lo_line) and not na(week_low)
+            add_group(week_low,  "PWL", bar_index)
+
+    if show_pdlevels and not na(pd_hi_line)
+        add_group(pd_high, "PDH", bar_index)
+        add_group(pd_low,  "PDL", bar_index)
+    if show_wed_levels and not na(wed_hi_line)
+        add_group(wed_high, "WED.H", bar_index)
+        add_group(wed_low,  "WED.L", bar_index)
+    if show_tue_levels and not na(tue_hi_line)
+        add_group(tue_high, "TUE.H", bar_index)
+        add_group(tue_low,  "TUE.L", bar_index)
+    if show_mon_levels and not na(mon_hi_line)
+        add_group(mon_high, "MON.H", bar_index)
+        add_group(mon_low,  "MON.L", bar_index)
+
+    if show_dayopen and not na(dayopen_line) and not na(dayopen_price)
+        add_group(dayopen_price, "True Day Open", bar_index)
+
+    if array.size(_groups) > 0
+        float sep = syminfo.mintick * 6.0
+        for g in _groups
+            int   lx    = bar_index
+            float ly    = g.level
+            int   safety = 0
+            bool  clash  = true
+            while clash and safety < 8
+                clash := false
+                if array.size(used_label_x) > 0 and array.size(used_label_y) > 0
+                    cnt = math.min(array.size(used_label_x), array.size(used_label_y))
+                    for j = 0 to cnt - 1
+                        if array.get(used_label_x, j) == lx and
+                             math.abs(ly - array.get(used_label_y, j)) < sep
+                            ly    += sep
+                            clash  := true
+                            break
+                safety += 1
+            new_lbl = label.new(lx, ly, g.txt,
+                 xloc=xloc.bar_index,
+                 style=label.style_label_left,
+                 color=color.new(color.white, 100),
+                 textcolor=label_color,
+                 size=label_size_setting)
+            array.push(combined_labels_arr, new_lbl)
+            array.push(used_label_x, lx)
+            array.push(used_label_y, ly)
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+
+inSession(sess) =>
+    not na(time(timeframe.period, sess, gmt_tz))
+
+inAsia        = inSession("2000-0000")
+inLondon      = inSession("0200-0500")
+inNY          = inSession("0800-1100")
+inLondonClose = inSession("1000-1200")
+
+var table dash = table.new(position.top_right, 2, 10,
+     bgcolor=color.new(color.black, 60),
+     border_color=color.new(color.gray, 50),
+     border_width=1, frame_color=color.new(color.gray, 30), frame_width=1)
+
+vwapDir      = close > vwap ? "▲ Above VWAP" : "▼ Below VWAP"
+vwapDirCol   = close > vwap ? bullCol : bearCol
+volRatio     = math.round(volume / volMA, 2)
+volRatioCol  = volRatio >= 1.2 ? bullCol : color.gray
+volRising    = volume[1] > volume[2]
+kzName       = inNY ? "🟢 New York" : inLondon ? "🔵 London" : inLondonClose ? "🟠 Ldn Close" : inAsia ? "🟣 Asia" : "Off-Session"
+lastSig      = bullSignal ? "▲ LONG" : bearSignal ? "▼ SHORT" : "None"
+lastSigCol   = bullSignal ? bullCol  : bearSignal ? bearCol   : color.gray
+impulseStr   = impulseBullSame ? "▲ Bull Match" : impulseBullMixed ? "▲ Bull Mixed" : impulseBearSame ? "▼ Bear Match" : impulseBearMixed ? "▼ Bear Mixed" : "–"
+impulseCol   = impulseBull ? bullCol : impulseBear ? bearCol : color.gray
+b1BodyStr    = str.tostring(math.round(b1bodyPct * 100, 0)) + "%"
+b2BodyStr    = str.tostring(math.round(b2bodyPct * 100, 0)) + "%"
+b2VolStr     = volConfirm ? "✔ Rising" : "✘ Flat"
+b2VolCol     = volConfirm ? bullCol : bearCol
+
+nearPDH    = not na(pd_high) and math.abs(close - pd_high) < atr * 0.5
+nearPDL    = not na(pd_low)  and math.abs(close - pd_low)  < atr * 0.5
+nearPWH    = not na(week_high) and math.abs(close - week_high) < atr * 0.5
+nearPWL    = not na(week_low)  and math.abs(close - week_low)  < atr * 0.5
+ictProx    = nearPDH ? "⚡ PDH" : nearPDL ? "⚡ PDL" : nearPWH ? "⚡ PWH" : nearPWL ? "⚡ PWL" : "–"
+ictProxCol = (nearPDH or nearPDL or nearPWH or nearPWL) ? color.yellow : color.gray
+
+if showDashboard and barstate.islast
+    table.cell(dash, 0, 0, "TWO-BAR FIB RETRACE", text_color=color.white, bgcolor=color.new(color.blue, 40), text_size=size.small)
+    table.cell(dash, 1, 0, "[FUTURES ET]",         text_color=color.white, bgcolor=color.new(color.blue, 40), text_size=size.small)
+    table.cell(dash, 0, 1, "Killzone",             text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 1, kzName,                 text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 2, "VWAP",                 text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 2, vwapDir,                text_color=vwapDirCol,  text_size=size.small)
+    table.cell(dash, 0, 3, "Vol Ratio",            text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 3, str.tostring(volRatio) + "x", text_color=volRatioCol, text_size=size.small)
+    table.cell(dash, 0, 4, "Bar2 Vol Rising",      text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 4, b2VolStr,               text_color=b2VolCol,    text_size=size.small)
+    table.cell(dash, 0, 5, "Bar1 Body",            text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 5, b1BodyStr,              text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 6, "Bar2 Body",            text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 6, b2BodyStr,              text_color=color.white, text_size=size.small)
+    table.cell(dash, 0, 7, "Impulse",              text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 7, impulseStr,             text_color=impulseCol,  text_size=size.small)
+    table.cell(dash, 0, 8, "ICT Level",            text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 8, ictProx,                text_color=ictProxCol,  text_size=size.small)
+    table.cell(dash, 0, 9, "Last Signal",          text_color=color.gray,  text_size=size.small)
+    table.cell(dash, 1, 9, lastSig,                text_color=lastSigCol,  text_size=size.small)
+
+// ============================================================
+// ALERTS
+// ============================================================
+
+alertcondition(bullSignal,              "LONG Signal",     "Two-Bar: LONG — wick into retrace zone above VWAP")
+alertcondition(bearSignal,              "SHORT Signal",    "Two-Bar: SHORT — wick into retrace zone below VWAP")
+alertcondition(bullSignal and inNY,     "LONG in NY",      "Two-Bar: LONG during NY Killzone")
+alertcondition(bearSignal and inNY,     "SHORT in NY",     "Two-Bar: SHORT during NY Killzone")
+alertcondition(bullSignal and inLondon, "LONG in London",  "Two-Bar: LONG during London Killzone")
+alertcondition(bearSignal and inLondon, "SHORT in London", "Two-Bar: SHORT during London Killzone")
+alertcondition(bullSignal or bearSignal,"Any Signal",      "Two-Bar: New signal detected")
