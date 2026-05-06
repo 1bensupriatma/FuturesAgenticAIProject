@@ -23,6 +23,10 @@ def explain_result(result: StrategyResult) -> str:
         f"FibAgent found a {direction} setup. The entry is {result['entry']}, "
         f"the stop loss is {result['stop_loss']}, and the take profit is "
         f"{result['take_profit']}. The confidence score is "
-        f"{result['confidence_score']}. These values come directly from the "
-        "deterministic strategy engine, not from an LLM prediction."
+        f"{result['confidence_score']}. Confidence starts at 70 after the "
+        "required setup rules pass, then can add 10 points for stronger average "
+        "impulse candle body, 10 points for stronger second-candle volume, and "
+        "10 points for VWAP alignment. The score is capped at 100. These values "
+        "come directly from the deterministic strategy engine, not from an LLM "
+        "prediction."
     )

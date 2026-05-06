@@ -272,6 +272,16 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 "confidence_score": setup_context["confidence_score"],
                 "source": "FibAgent MVP deterministic strategy",
             }
+            confidence_context = {
+                "meaning": "setup quality, not win probability",
+                "formula": "70 + body_bonus + volume_bonus + vwap_bonus",
+                "base_score": 70,
+                "body_bonus": "+10 if the average body size of the two impulse candles is at least 65% of their high-low range",
+                "volume_bonus": "+10 if the second impulse candle volume is at least 1.25x the first impulse candle volume",
+                "vwap_bonus": "+10 if the current close is aligned with VWAP: above VWAP for bullish setups, below VWAP for bearish setups",
+                "cap": 100,
+                "no_setup_score": 0,
+            }
             toolbox_dataframe = pd.DataFrame(mvp_payload["rows"]).assign(symbol=symbol, contract=symbol)
             request_toolbox = FuturesToolbox(dataframe=toolbox_dataframe)
             log.info(
@@ -291,12 +301,15 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 f"- User selected response mode: {response_mode}\n"
                 f"- Current deterministic setup state: {json.dumps(setup_context, default=str)}\n"
                 f"- Current market bias state: {json.dumps(market_bias_context, default=str)}\n"
+                f"- Confidence score rule: {json.dumps(confidence_context, default=str)}\n"
                 "- If the user omits a symbol or contract, use the default symbol/contract above.\n"
                 "- If the user asks whether the market data is bullish or bearish, and does not explicitly ask "
                 "for a trade setup, use the current market bias state for the answer.\n"
                 "- When answering setup questions, treat the deterministic setup state as authoritative. "
                 "Explain in plain English whether a valid setup exists and whether entry, stop, and target "
                 "are available. Do not invent trade levels when setup_found is false.\n"
+                "- When the user asks about confidence, explicitly explain the 70 + 10 + 10 + 10 rule from "
+                "the confidence score rule above.\n"
                 "- Return JSON only if the user explicitly asks for JSON, structured output, schema output, "
                 "or a machine-readable response, or if the selected response mode is json. If JSON is requested, "
                 "return exactly these keys: direction, entry, stop, target, confidence_score. If setup_found is "
@@ -346,8 +359,6 @@ def build_handler(data_path: str | Path | None = None):
     ConfiguredFuturesWebHandler.display_metadata = DEFAULT_DISPLAY_METADATA.copy()
     ConfiguredFuturesWebHandler.data_source_mode = "yfinance"
     ConfiguredFuturesWebHandler.data_source_error = None
-    previous_provider = os.environ.get("LIVE_DATA_PROVIDER")
-    os.environ["LIVE_DATA_PROVIDER"] = "yfinance"
     try:
         ConfiguredFuturesWebHandler.live_data_hub = create_live_data_hub(ConfiguredFuturesWebHandler.data_path)
         log.info("Live data hub started: provider=%s", ConfiguredFuturesWebHandler.live_data_hub.provider_name)
@@ -355,11 +366,6 @@ def build_handler(data_path: str | Path | None = None):
         ConfiguredFuturesWebHandler.live_data_hub = None
         ConfiguredFuturesWebHandler.data_source_error = str(exc)
         log.exception("Guardrail event: live data hub unavailable")
-    finally:
-        if previous_provider is None:
-            os.environ.pop("LIVE_DATA_PROVIDER", None)
-        else:
-            os.environ["LIVE_DATA_PROVIDER"] = previous_provider
 
     try:
         from .futures_agent import FuturesAgent

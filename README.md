@@ -68,6 +68,10 @@ Main endpoints:
 - `GET /api/mvp/analyze`
 - `POST /api/chat`
 
+Demo speaking notes and code walkthrough:
+
+- [DEMO_SCRIPT.md](DEMO_SCRIPT.md)
+
 ## Audit Logging
 
 FibAgent creates a timestamped audit trail for each valid agent chat session.
@@ -139,6 +143,24 @@ The strategy checks:
 - entry, stop loss, take profit, and confidence score
 
 The strategy engine never outputs a trade if confidence is below 70.
+
+## Confidence Score
+
+`confidence_score` measures deterministic setup quality, not probability of
+profit. It is calculated in `strategy.py` after the required setup rules pass.
+
+The score starts at `70`, then adds:
+
+- `+10` if the average body size of the two impulse candles is at least `65%`
+  of their full high-low range.
+- `+10` if the second impulse candle volume is at least `1.25x` the first
+  impulse candle volume.
+- `+10` if price is aligned with VWAP:
+  - bullish setup: current close is above VWAP
+  - bearish setup: current close is below VWAP
+
+The score is capped at `100`. If required setup rules fail, FibAgent returns the
+no-trade fallback with confidence `0`.
 
 ## Output Shape
 

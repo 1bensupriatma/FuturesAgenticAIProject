@@ -36,7 +36,6 @@
       <section class="terminal-window chart-terminal" aria-label="FibAgent chart view">
         <div class="terminal-bar">
           <strong>FibAgent Engine - Chart View</strong>
-          <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
         </div>
         <div class="chart-header">
           <div>
@@ -154,13 +153,13 @@
             <button id="agentClose" class="icon-button" type="button" aria-label="Collapse chat agent">&times;</button>
           </div>
         </div>
-        <div id="chatStatus" class="status-line muted">Ask about price movement, rollover, or contract snapshots.</div>
+        <div id="chatStatus" class="status-line muted"></div>
         <div class="chat-agent-tools" aria-label="Agent chat tools">
           <div class="suggestion-row" aria-label="Suggested prompts">
             <select id="chatSuggestion" aria-label="Choose suggested prompt">
               <option value="Do we have a setup right now?">Current setup?</option>
               <option value="Why is there no trade right now?">Why no trade?</option>
-              <option value="Explain the confidence score.">Explain confidence</option>
+              <option value="Explain the confidence score using the 70 + 10 + 10 + 10 rule.">Explain confidence</option>
               <option value="Summarize the latest candle.">Latest candle</option>
               <option value="Return JSON for the current setup.">Return JSON</option>
             </select>

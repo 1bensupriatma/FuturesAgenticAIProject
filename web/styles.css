@@ -186,29 +186,6 @@ textarea {
   color: #d8dae4;
 }
 
-.window-dots {
-  display: flex;
-  gap: 10px;
-}
-
-.window-dots i {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-}
-
-.window-dots i:nth-child(1) {
-  background: var(--teal);
-}
-
-.window-dots i:nth-child(2) {
-  background: var(--amber);
-}
-
-.window-dots i:nth-child(3) {
-  background: var(--red);
-}
-
 .chart-header {
   position: absolute;
   z-index: 2;

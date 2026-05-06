@@ -101,6 +101,36 @@ def confidence_score(
     return min(score, 100)
 
 
+def confidence_breakdown(
+    first: dict[str, Any],
+    second: dict[str, Any],
+    current: dict[str, Any],
+    current_vwap: float,
+    direction: Direction,
+) -> list[str]:
+    """Explain the deterministic confidence-score components."""
+    avg_body = (candle_body_percent(first) + candle_body_percent(second)) / 2
+    volume_ratio = 0.0 if first["volume"] == 0 else second["volume"] / first["volume"]
+    vwap_aligned = (
+        current["close"] > current_vwap
+        if direction == "bullish"
+        else current["close"] < current_vwap
+    )
+
+    breakdown = [
+        "Confidence starts at 70 after all required setup rules pass.",
+        f"Average impulse candle body was {avg_body:.1%}; +10 if it is at least 65%.",
+        f"Second candle volume was {volume_ratio:.2f}x the first candle volume; +10 if it is at least 1.25x.",
+        (
+            f"Current close was {'above' if direction == 'bullish' else 'below'} VWAP; +10 applied."
+            if vwap_aligned
+            else f"Current close was not {'above' if direction == 'bullish' else 'below'} VWAP; +0 applied."
+        ),
+        "The score is capped at 100 and measures setup quality, not win probability.",
+    ]
+    return breakdown
+
+
 def build_trade_result(
     first: dict[str, Any],
     second: dict[str, Any],
@@ -146,6 +176,7 @@ def build_trade_result(
             "Second impulse candle volume was greater than first candle volume.",
             f"Price was {'above' if direction == 'bullish' else 'below'} VWAP.",
             "Current candle retraced into the 50% to 61.8% Fibonacci entry zone.",
+            *confidence_breakdown(first, second, current, current_vwap, direction),
         ],
     }
     return round_result_numbers(result)
