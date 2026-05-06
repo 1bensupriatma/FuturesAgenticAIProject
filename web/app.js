@@ -168,6 +168,10 @@ async function sendChat(event) {
   }
 
   addChatMessage("assistant", payload.answer || "");
+  setText(
+    "activeLogPath",
+    payload.active_log_path ? payload.active_log_path.split("/").pop() : "Unavailable",
+  );
   setStatus("chatStatus", "Response received.", "success");
 }
 

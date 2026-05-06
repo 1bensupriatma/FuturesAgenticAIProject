@@ -252,6 +252,8 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
             return
 
         try:
+            session_log_path = self.agent_instance.start_new_session()
+
             from .futures_tools import FuturesToolbox
             import pandas as pd
 
@@ -292,12 +294,17 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
                 "are available. Do not invent trade levels when setup_found is false.\n"
                 "- Return JSON only if the user explicitly asks for JSON, structured output, schema output, "
                 "or a machine-readable response. If JSON is requested, return exactly these keys: direction, "
-                "entry, stop, target, confidence_score. Do not wrap it in markdown.\n"
+                "entry, stop, target, confidence_score. If setup_found is false, use direction \"neutral\" and "
+                "null for entry, stop, and target. Do not wrap it in markdown.\n"
                 "- For questions about latest price, OHLCV, movement, trend, setup state, or dataset state, "
                 "use the available tools or deterministic context instead of asking the user to repeat the symbol.\n\n"
                 f"User question: {prompt}"
             )
-            answer = self.agent_instance.ask(contextual_prompt, toolbox=request_toolbox)
+            answer = self.agent_instance.ask(
+                contextual_prompt,
+                toolbox=request_toolbox,
+                create_session_log=False,
+            )
         except Exception as exc:
             log.exception("Guardrail event: chat failed")
             _json_response(self, {"error": str(exc)}, status=HTTPStatus.BAD_GATEWAY)
@@ -305,7 +312,7 @@ class FuturesWebHandler(BaseHTTPRequestHandler):
 
         log.info("Chat final response: %s", answer)
         flush_transcript()
-        _json_response(self, {"answer": answer})
+        _json_response(self, {"answer": answer, "active_log_path": str(session_log_path)})
 
 
 def build_handler(data_path: str | Path | None = None):

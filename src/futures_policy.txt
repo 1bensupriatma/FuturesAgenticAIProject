@@ -37,7 +37,7 @@ Output filtering:
 
 Required JSON schema when JSON is requested:
 {
-  "direction": "bullish|bearish|null",
+  "direction": "bullish|bearish|neutral",
   "entry": "price_level|null",
   "stop": "stop_loss|null",
   "target": "take_profit|null",
@@ -46,7 +46,7 @@ Required JSON schema when JSON is requested:
 
 Fallback JSON when no reliable setup exists:
 {
-  "direction": null,
+  "direction": "neutral",
   "entry": null,
   "stop": null,
   "target": null,

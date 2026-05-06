@@ -70,15 +70,16 @@ Main endpoints:
 
 ## Audit Logging
 
-FibAgent creates a timestamped audit trail each time the website backend starts.
+FibAgent creates a timestamped audit trail for each valid agent chat session.
 The active transcript is created in:
 
 ```text
 src/logs/agent_log_YYYYMMDD_HHMMSS.log
 ```
 
-The active log filename is also shown in the website header and returned by
-`GET /api/health` as `active_log_path`.
+The latest active log filename is shown in the website header. It is returned by
+`GET /api/health` as `active_log_path` and by each successful `POST /api/chat`
+response.
 
 The audit log records:
 
@@ -92,8 +93,8 @@ The audit log records:
 - loop termination events
 - final agent responses
 
-This gives reviewers a persistent transcript for checking the agentic workflow
-after a demo run. It also supports the project requirement to document tool use,
+This gives reviewers a separate persistent transcript for each conversation
+with the agent. It also supports the project requirement to document tool use,
 guardrails, and final responses rather than only showing the live UI.
 
 ## How The Workflow Works

@@ -3,10 +3,10 @@ import logging
 from pathlib import Path
 
 try:
-    from .audit_logging import configure_logging, flush_transcript
+    from .audit_logging import configure_logging, flush_transcript, start_new_session_log
     from .futures_tools import TOOLS_SCHEMA, FuturesToolbox
 except ImportError:
-    from audit_logging import configure_logging, flush_transcript
+    from audit_logging import configure_logging, flush_transcript, start_new_session_log
     from futures_tools import TOOLS_SCHEMA, FuturesToolbox
 
 
@@ -29,6 +29,12 @@ class FuturesAgent:
         self.system_policy = self._load_policy(policy_path or DEFAULT_POLICY_PATH)
         self.messages = [{"role": "system", "content": self.system_policy}]
         log.info("Agent initialized: model=%s preserve_history=%s log=%s", self.model_name, self.preserve_history, self.active_log_path)
+
+    def start_new_session(self):
+        """Create a fresh audit transcript for the next agent interaction."""
+        self.active_log_path = start_new_session_log()
+        log.info("Agent session started: model=%s log=%s", self.model_name, self.active_log_path)
+        return self.active_log_path
 
     @staticmethod
     def _build_client():
@@ -83,7 +89,10 @@ class FuturesAgent:
             tools=TOOLS_SCHEMA,
         )
 
-    def ask(self, prompt, max_iterations=6, toolbox=None):
+    def ask(self, prompt, max_iterations=6, toolbox=None, create_session_log=True):
+        if create_session_log:
+            self.start_new_session()
+
         messages = self.messages if self.preserve_history else [{"role": "system", "content": self.system_policy}]
         active_toolbox = toolbox or self.toolbox
         messages.append({"role": "user", "content": prompt})

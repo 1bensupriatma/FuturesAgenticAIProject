@@ -20,20 +20,48 @@ LOGS_DIR = CURRENT_DIR / "logs"
 ACTIVE_LOG_PATH: Path | None = None
 TRANSCRIPT_CONSOLE = None
 TRANSCRIPT_FILE_HANDLE = None
+SESSION_COUNTER = 0
 
 log = logging.getLogger("agent")
 
 
-def configure_logging() -> Path:
-    """Send logs to both the terminal and a timestamped transcript file."""
-    global ACTIVE_LOG_PATH, TRANSCRIPT_CONSOLE, TRANSCRIPT_FILE_HANDLE
+def _close_transcript_file() -> None:
+    """Flush and close the previous transcript file before opening a new one."""
+    global TRANSCRIPT_FILE_HANDLE
 
-    if ACTIVE_LOG_PATH is not None:
-        return ACTIVE_LOG_PATH
+    if TRANSCRIPT_FILE_HANDLE is not None:
+        TRANSCRIPT_FILE_HANDLE.flush()
+        TRANSCRIPT_FILE_HANDLE.close()
+        TRANSCRIPT_FILE_HANDLE = None
+
+
+def _timestamped_log_path() -> Path:
+    """Build a unique timestamped log path for an agent session."""
+    global SESSION_COUNTER
 
     LOGS_DIR.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = LOGS_DIR / f"agent_log_{timestamp}.log"
+
+    # If two chat requests arrive in the same second, keep the human-readable
+    # timestamp and add a small counter so the transcript is not overwritten.
+    while log_path.exists():
+        SESSION_COUNTER += 1
+        log_path = LOGS_DIR / f"agent_log_{timestamp}_{SESSION_COUNTER}.log"
+
+    return log_path
+
+
+def configure_logging(force_new_session: bool = False) -> Path:
+    """Send logs to both the terminal and a timestamped transcript file."""
+    global ACTIVE_LOG_PATH, TRANSCRIPT_CONSOLE, TRANSCRIPT_FILE_HANDLE
+
+    if ACTIVE_LOG_PATH is not None and not force_new_session:
+        return ACTIVE_LOG_PATH
+
+    _close_transcript_file()
+    TRANSCRIPT_CONSOLE = None
+    log_path = _timestamped_log_path()
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -74,6 +102,11 @@ def configure_logging() -> Path:
     ACTIVE_LOG_PATH = log_path
     log.info("Audit logging configured: %s", log_path)
     return log_path
+
+
+def start_new_session_log() -> Path:
+    """Rotate to a fresh audit transcript for a new agent session."""
+    return configure_logging(force_new_session=True)
 
 
 def flush_transcript() -> None:
